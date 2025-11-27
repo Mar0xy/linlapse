@@ -462,10 +462,20 @@ public class BackgroundPlayer : UserControl, IDisposable
     {
         try
         {
+            _isPlayingVideo = false;
+            _frameReady = false;
             _renderTimer?.Stop();
+            
             if (_mediaPlayer != null)
             {
-                _mediaPlayer.Stop();
+                // Stop playback first
+                if (_mediaPlayer.IsPlaying)
+                {
+                    _mediaPlayer.Stop();
+                }
+                
+                // Give LibVLC time to finish any pending callbacks
+                Thread.Sleep(100);
             }
         }
         catch (Exception ex)
@@ -483,16 +493,34 @@ public class BackgroundPlayer : UserControl, IDisposable
 
         try
         {
+            // Stop timer first
             _renderTimer?.Stop();
-            StopVideo();
-
+            _renderTimer = null;
+            
+            // Stop video playback
             if (_mediaPlayer != null)
             {
-                _mediaPlayer.EndReached -= OnVideoEndReached;
-                _mediaPlayer.Dispose();
+                try
+                {
+                    if (_mediaPlayer.IsPlaying)
+                    {
+                        _mediaPlayer.Stop();
+                    }
+                    
+                    // Give LibVLC time to clean up callbacks
+                    Thread.Sleep(150);
+                    
+                    _mediaPlayer.EndReached -= OnVideoEndReached;
+                    _mediaPlayer.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Error disposing MediaPlayer");
+                }
                 _mediaPlayer = null;
             }
 
+            // Free video buffer after MediaPlayer is disposed
             FreeVideoBuffer();
         }
         catch (Exception ex)
@@ -503,8 +531,20 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     public static void DisposeSharedResources()
     {
-        _sharedLibVLC?.Dispose();
-        _sharedLibVLC = null;
+        try
+        {
+            if (_sharedLibVLC != null)
+            {
+                // Give any remaining callbacks time to complete
+                Thread.Sleep(200);
+                _sharedLibVLC.Dispose();
+                _sharedLibVLC = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Error disposing shared LibVLC resources");
+        }
         _libVLCInitialized = false;
         _libVLCAvailable = false;
     }
