@@ -3,15 +3,17 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using LibVLCSharp.Shared;
-using LibVLCSharp.Avalonia;
 using Serilog;
+using System.Runtime.InteropServices;
 
 namespace Linlapse.Views.Controls;
 
 /// <summary>
 /// A control that displays either an image or video background using LibVLC
+/// with frame-by-frame rendering to an Avalonia Image for proper scaling and z-ordering
 /// </summary>
 public class BackgroundPlayer : UserControl, IDisposable
 {
@@ -22,11 +24,26 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     private MediaPlayer? _mediaPlayer;
     private Image? _imageView;
-    private VideoView? _videoView;
-    private Grid? _contentGrid;
     private string? _currentSource;
     private bool _currentIsVideo;
     private bool _isDisposed;
+
+    // Frame buffer for video rendering - fixed size for performance
+    private const int VideoWidth = 1920;
+    private const int VideoHeight = 1080;
+    private const int VideoPitch = VideoWidth * 4; // BGRA = 4 bytes per pixel
+    private const int BufferSize = VideoPitch * VideoHeight;
+
+    private WriteableBitmap? _videoBitmap;
+    private byte[]? _videoBuffer;
+    private readonly object _bufferLock = new();
+    private GCHandle _bufferHandle;
+    private IntPtr _bufferPtr;
+    private bool _isPlayingVideo;
+
+    // Frame rate limiter - target ~30fps for background video (saves resources)
+    private DateTime _lastFrameTime = DateTime.MinValue;
+    private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(33); // ~30fps
 
     public static readonly StyledProperty<string?> SourceProperty =
         AvaloniaProperty.Register<BackgroundPlayer, string?>(nameof(Source));
@@ -57,9 +74,7 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     public BackgroundPlayer()
     {
-        // Initialize LibVLC FIRST so we know if it's available
         TryInitializeLibVLC();
-        // Then initialize components (which checks _libVLCAvailable)
         InitializeComponent();
     }
 
@@ -72,20 +87,17 @@ public class BackgroundPlayer : UserControl, IDisposable
 
             try
             {
-                // Initialize LibVLCSharp core
                 Core.Initialize();
 
-                // Create LibVLC with options for embedded playback
-                // --no-video-title-show: Don't show title overlay
-                // --video-on-top: Keep video embedded (not in separate window)
-                // --no-snapshot-preview: Don't show preview
+                // Create LibVLC with minimal options
                 _sharedLibVLC = new LibVLC(
                     "--no-video-title-show",
-                    "--no-snapshot-preview"
+                    "--no-snapshot-preview",
+                    "--no-osd"
                 );
 
                 _libVLCAvailable = true;
-                Log.Information("LibVLC initialized successfully");
+                Log.Information("LibVLC initialized successfully for frame-by-frame rendering");
             }
             catch (Exception ex)
             {
@@ -98,35 +110,49 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     private void InitializeComponent()
     {
-        _contentGrid = new Grid
-        {
-            ClipToBounds = true
-        };
-
-        // Pre-create VideoView at lowest z-index - it needs to be in the visual tree before MediaPlayer is assigned
-        if (_libVLCAvailable)
-        {
-            _videoView = new VideoView
-            {
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Stretch,
-                IsVisible = false,
-                ZIndex = 0  // Lowest z-index
-            };
-            _contentGrid.Children.Add(_videoView);
-        }
-
-        // Image view for static backgrounds at higher z-index
+        // Single Image view for both static images and video frames
         _imageView = new Image
         {
             Stretch = Stretch.UniformToFill,
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            ZIndex = 1  // Higher z-index than video
+            VerticalAlignment = VerticalAlignment.Center
         };
-        _contentGrid.Children.Add(_imageView);
 
-        Content = _contentGrid;
+        Content = _imageView;
+
+        // Pre-allocate video buffer and bitmap for better performance
+        InitializeVideoBuffer();
+    }
+
+    private void InitializeVideoBuffer()
+    {
+        if (!_libVLCAvailable) return;
+
+        lock (_bufferLock)
+        {
+            try
+            {
+                // Allocate buffer for video frames
+                _videoBuffer = new byte[BufferSize];
+
+                // Pin the buffer and get its address
+                _bufferHandle = GCHandle.Alloc(_videoBuffer, GCHandleType.Pinned);
+                _bufferPtr = _bufferHandle.AddrOfPinnedObject();
+
+                // Create WriteableBitmap
+                _videoBitmap = new WriteableBitmap(
+                    new PixelSize(VideoWidth, VideoHeight),
+                    new Vector(96, 96),
+                    Avalonia.Platform.PixelFormat.Bgra8888,
+                    AlphaFormat.Premul);
+
+                Log.Debug("Video buffer initialized: {Width}x{Height}", VideoWidth, VideoHeight);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to initialize video buffer");
+            }
+        }
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -182,16 +208,25 @@ public class BackgroundPlayer : UserControl, IDisposable
     private void ClearBackground()
     {
         StopVideo();
+        _isPlayingVideo = false;
 
         if (_imageView != null)
         {
             _imageView.Source = null;
-            _imageView.IsVisible = true;
         }
+    }
 
-        if (_videoView != null)
+    private void FreeVideoBuffer()
+    {
+        lock (_bufferLock)
         {
-            _videoView.IsVisible = false;
+            if (_bufferHandle.IsAllocated)
+            {
+                _bufferHandle.Free();
+            }
+            _videoBuffer = null;
+            _videoBitmap = null;
+            _bufferPtr = IntPtr.Zero;
         }
     }
 
@@ -202,8 +237,7 @@ public class BackgroundPlayer : UserControl, IDisposable
             if (_imageView == null) return;
 
             StopVideo();
-            _imageView.IsVisible = true;
-            if (_videoView != null) _videoView.IsVisible = false;
+            _isPlayingVideo = false;
 
             if (File.Exists(source))
             {
@@ -211,7 +245,7 @@ public class BackgroundPlayer : UserControl, IDisposable
                 {
                     try
                     {
-                        if (_imageView != null)
+                        if (_imageView != null && !_isPlayingVideo)
                         {
                             var bitmap = new Bitmap(source);
                             _imageView.Source = bitmap;
@@ -255,7 +289,7 @@ public class BackgroundPlayer : UserControl, IDisposable
                 {
                     using var stream = new MemoryStream(bytes);
                     var bitmap = new Bitmap(stream);
-                    if (_imageView != null)
+                    if (_imageView != null && !_isPlayingVideo)
                     {
                         _imageView.Source = bitmap;
                         Log.Debug("Loaded background image from URL: {Url}", url);
@@ -275,33 +309,37 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     private void ShowVideo(string source)
     {
-        if (_sharedLibVLC == null || _videoView == null)
+        if (_sharedLibVLC == null || _bufferPtr == IntPtr.Zero)
         {
-            Log.Warning("LibVLC or VideoView not available for video playback");
+            Log.Warning("LibVLC or video buffer not available for video playback");
             return;
         }
 
         try
         {
-            // Hide image, show video
-            if (_imageView != null) _imageView.IsVisible = false;
-            _videoView.IsVisible = true;
+            _isPlayingVideo = true;
 
-            // Create MediaPlayer if needed
+            // Create MediaPlayer with video callbacks for frame-by-frame rendering
             if (_mediaPlayer == null)
             {
                 _mediaPlayer = new MediaPlayer(_sharedLibVLC);
                 _mediaPlayer.Mute = MuteAudio;
                 _mediaPlayer.EndReached += OnVideoEndReached;
+
+                // Set up fixed video format - RV32 is BGRA which Avalonia supports
+                _mediaPlayer.SetVideoFormat("RV32", VideoWidth, VideoHeight, VideoPitch);
+
+                // Set up video callbacks for frame-by-frame rendering
+                _mediaPlayer.SetVideoCallbacks(
+                    LockVideo,
+                    null,
+                    DisplayVideo
+                );
             }
             else
             {
                 _mediaPlayer.Stop();
             }
-
-            // IMPORTANT: Assign MediaPlayer to VideoView BEFORE playing
-            // This ensures LibVLCSharp.Avalonia can set up the video output correctly
-            _videoView.MediaPlayer = _mediaPlayer;
 
             // Create media
             Media? media = null;
@@ -324,26 +362,67 @@ public class BackgroundPlayer : UserControl, IDisposable
                 }
 
                 _mediaPlayer.Play(media);
-
-                // Set aspect ratio to fill the container after playback starts
-                // This will crop the video to fill rather than letterbox
-                _mediaPlayer.AspectRatio = null; // Let it auto-detect first
-                _mediaPlayer.Scale = 0; // Auto-scale
-
-                Log.Debug("Playing background video: {Path}", source);
+                Log.Debug("Playing background video with frame rendering: {Path}", source);
             }
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error showing video background");
+            _isPlayingVideo = false;
         }
+    }
+
+    private IntPtr LockVideo(IntPtr opaque, IntPtr planes)
+    {
+        // Provide the buffer address to VLC
+        Marshal.WriteIntPtr(planes, _bufferPtr);
+        return IntPtr.Zero;
+    }
+
+    private void DisplayVideo(IntPtr opaque, IntPtr picture)
+    {
+        // Rate limit to save resources
+        var now = DateTime.Now;
+        if (now - _lastFrameTime < FrameInterval)
+            return;
+        _lastFrameTime = now;
+
+        if (_isDisposed || !_isPlayingVideo) return;
+
+        // Copy frame to bitmap on UI thread
+        Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            try
+            {
+                lock (_bufferLock)
+                {
+                    if (_videoBitmap == null || _videoBuffer == null || _imageView == null)
+                        return;
+
+                    using (var fb = _videoBitmap.Lock())
+                    {
+                        Marshal.Copy(_videoBuffer, 0, fb.Address, _videoBuffer.Length);
+                    }
+
+                    // Update image source
+                    if (_isPlayingVideo)
+                    {
+                        _imageView.Source = _videoBitmap;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Error rendering video frame");
+            }
+        });
     }
 
     private void OnVideoEndReached(object? sender, EventArgs e)
     {
         Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (_mediaPlayer != null && !_isDisposed)
+            if (_mediaPlayer != null && !_isDisposed && _isPlayingVideo)
             {
                 _mediaPlayer.Stop();
                 _mediaPlayer.Play();
@@ -370,6 +449,7 @@ public class BackgroundPlayer : UserControl, IDisposable
     {
         if (_isDisposed) return;
         _isDisposed = true;
+        _isPlayingVideo = false;
 
         try
         {
@@ -381,6 +461,8 @@ public class BackgroundPlayer : UserControl, IDisposable
                 _mediaPlayer.Dispose();
                 _mediaPlayer = null;
             }
+
+            FreeVideoBuffer();
         }
         catch (Exception ex)
         {
