@@ -65,6 +65,7 @@
 - **Runtime**: .NET 9.0 Runtime
 - **Wine**: Wine 7.0+ or Proton (for running Windows games)
 - **Dependencies**: GTK3, libX11
+- **Optional**: libvlc (for video backgrounds)
 
 ## Installation
 
@@ -106,6 +107,18 @@ dotnet run --project src/Linlapse/Linlapse.csproj
 
    # Arch Linux
    sudo pacman -S wine
+   ```
+
+3. **Install libvlc (optional, for video backgrounds)**:
+   ```bash
+   # Fedora
+   sudo dnf install vlc-devel
+
+   # Ubuntu/Debian
+   sudo apt-get install libvlc-dev vlc
+
+   # Arch Linux
+   sudo pacman -S vlc
    ```
 
 ## Usage
