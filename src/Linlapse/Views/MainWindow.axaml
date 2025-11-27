@@ -178,15 +178,18 @@
                     CornerRadius="16"
                     ClipToBounds="True">
                 <Grid>
-                    <!-- Background Image/Video -->
+                    <!-- Background Image/Video - ZIndex 0 (lowest) -->
                     <controls:BackgroundPlayer 
                         x:Name="BackgroundPlayer"
                         Source="{Binding BackgroundSource}"
                         IsVideo="{Binding IsVideoBackground}"
-                        MuteAudio="True"/>
+                        MuteAudio="True"
+                        IsHitTestVisible="False"
+                        ZIndex="0"/>
                     
-                    <!-- Fallback Gradient (shown when no background) -->
-                    <Border IsVisible="{Binding BackgroundSource, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+                    <!-- Fallback Gradient (shown when no background) - ZIndex 1 -->
+                    <Border ZIndex="1"
+                            IsVisible="{Binding BackgroundSource, Converter={x:Static StringConverters.IsNullOrEmpty}}">
                         <Border.Background>
                             <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
                                 <GradientStop Color="#2d2d5a" Offset="0"/>
@@ -195,12 +198,14 @@
                         </Border.Background>
                     </Border>
                     
-                    <!-- Semi-transparent overlay for better text readability over backgrounds -->
-                    <Border Background="#000000" Opacity="0.5"
+                    <!-- Semi-transparent overlay for better text readability over backgrounds - ZIndex 2 -->
+                    <Border Background="#000000" Opacity="0.4"
+                            ZIndex="2"
                             IsVisible="{Binding BackgroundSource, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     
-                    <!-- Content when game is selected -->
-                    <Grid IsVisible="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNotNull}}"
+                    <!-- Content when game is selected - ZIndex 3 (highest) -->
+                    <Grid ZIndex="3"
+                          IsVisible="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNotNull}}"
                           Margin="32">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*"/>
@@ -417,8 +422,9 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- Placeholder when no game is selected -->
-                    <StackPanel IsVisible="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNull}}"
+                    <!-- Placeholder when no game is selected - ZIndex 3 -->
+                    <StackPanel ZIndex="3"
+                                IsVisible="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNull}}"
                                 VerticalAlignment="Center"
                                 HorizontalAlignment="Center">
                         <TextBlock Text="🎮" FontSize="64" HorizontalAlignment="Center"/>

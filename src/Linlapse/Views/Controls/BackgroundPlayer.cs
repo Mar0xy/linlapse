@@ -75,9 +75,13 @@ public class BackgroundPlayer : UserControl, IDisposable
                 // Initialize LibVLCSharp core
                 Core.Initialize();
 
-                // Create LibVLC with minimal options - let LibVLCSharp.Avalonia handle video output
+                // Create LibVLC with options for embedded playback
+                // --no-video-title-show: Don't show title overlay
+                // --video-on-top: Keep video embedded (not in separate window)
+                // --no-snapshot-preview: Don't show preview
                 _sharedLibVLC = new LibVLC(
-                    "--no-video-title-show"
+                    "--no-video-title-show",
+                    "--no-snapshot-preview"
                 );
 
                 _libVLCAvailable = true;
@@ -94,28 +98,33 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     private void InitializeComponent()
     {
-        _contentGrid = new Grid();
-
-        // Image view for static backgrounds
-        _imageView = new Image
+        _contentGrid = new Grid
         {
-            Stretch = Stretch.UniformToFill,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
+            ClipToBounds = true
         };
-        _contentGrid.Children.Add(_imageView);
 
-        // Pre-create VideoView - it needs to be in the visual tree before MediaPlayer is assigned
+        // Pre-create VideoView at lowest z-index - it needs to be in the visual tree before MediaPlayer is assigned
         if (_libVLCAvailable)
         {
             _videoView = new VideoView
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch,
-                IsVisible = false
+                IsVisible = false,
+                ZIndex = 0  // Lowest z-index
             };
-            _contentGrid.Children.Insert(0, _videoView);
+            _contentGrid.Children.Add(_videoView);
         }
+
+        // Image view for static backgrounds at higher z-index
+        _imageView = new Image
+        {
+            Stretch = Stretch.UniformToFill,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            ZIndex = 1  // Higher z-index than video
+        };
+        _contentGrid.Children.Add(_imageView);
 
         Content = _contentGrid;
     }
@@ -307,6 +316,7 @@ public class BackgroundPlayer : UserControl, IDisposable
 
             if (media != null)
             {
+                // Loop the video
                 media.AddOption(":input-repeat=65535");
                 if (MuteAudio)
                 {
@@ -314,6 +324,12 @@ public class BackgroundPlayer : UserControl, IDisposable
                 }
 
                 _mediaPlayer.Play(media);
+
+                // Set aspect ratio to fill the container after playback starts
+                // This will crop the video to fill rather than letterbox
+                _mediaPlayer.AspectRatio = null; // Let it auto-detect first
+                _mediaPlayer.Scale = 0; // Auto-scale
+
                 Log.Debug("Playing background video: {Path}", source);
             }
         }
