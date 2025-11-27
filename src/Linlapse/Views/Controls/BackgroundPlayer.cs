@@ -57,8 +57,10 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     public BackgroundPlayer()
     {
-        InitializeComponent();
+        // Initialize LibVLC FIRST so we know if it's available
         TryInitializeLibVLC();
+        // Then initialize components (which checks _libVLCAvailable)
+        InitializeComponent();
     }
 
     private static void TryInitializeLibVLC()
