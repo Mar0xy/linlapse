@@ -241,9 +241,40 @@ public class GameLauncherService
             ? gameSettings.CustomWinePrefixPath
             : settings.WinePrefixPath;
 
-        var winePath = settings.UseSystemWine
-            ? "wine"
-            : settings.WineExecutablePath ?? "wine";
+        // Determine whether to use Proton or Wine
+        string winePath;
+        bool isProton = false;
+        
+        if (settings.UseProton && !string.IsNullOrEmpty(settings.ProtonPath))
+        {
+            // Proton path should point to the proton script or wine binary within Proton
+            var protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine64");
+            if (!File.Exists(protonWinePath))
+            {
+                protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine");
+            }
+            if (!File.Exists(protonWinePath))
+            {
+                // Try proton script directly
+                protonWinePath = Path.Combine(settings.ProtonPath, "proton");
+            }
+            
+            if (File.Exists(protonWinePath))
+            {
+                winePath = protonWinePath;
+                isProton = true;
+                Log.Information("Using Proton from {Path}", settings.ProtonPath);
+            }
+            else
+            {
+                Log.Warning("Proton path configured but wine binary not found at {Path}, falling back to Wine", settings.ProtonPath);
+                winePath = settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine";
+            }
+        }
+        else
+        {
+            winePath = settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine";
+        }
 
         // Ensure wine prefix exists
         if (!string.IsNullOrEmpty(winePrefix))
@@ -288,10 +319,23 @@ public class GameLauncherService
         if (!string.IsNullOrEmpty(winePrefix))
         {
             startInfo.Environment["WINEPREFIX"] = winePrefix;
+            if (isProton)
+            {
+                startInfo.Environment["STEAM_COMPAT_DATA_PATH"] = winePrefix;
+            }
         }
 
         startInfo.Environment["WINEDLLOVERRIDES"] = "mscoree,mshtml=";
         startInfo.Environment["DXVK_HUD"] = "compiler";
+        
+        // Proton-specific environment variables
+        if (isProton)
+        {
+            startInfo.Environment["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = 
+                Environment.GetEnvironmentVariable("HOME") + "/.steam/steam";
+            startInfo.Environment["PROTON_NO_ESYNC"] = "1";
+            startInfo.Environment["PROTON_NO_FSYNC"] = "1";
+        }
 
         // Apply custom environment variables
         if (gameSettings?.EnvironmentVariables != null)
@@ -361,12 +405,42 @@ public class GameLauncherService
     public async Task<WineInfo> GetWineInfoAsync()
     {
         var info = new WineInfo();
+        var settings = _settingsService.Settings;
 
         try
         {
-            var winePath = _settingsService.Settings.UseSystemWine
-                ? "wine"
-                : _settingsService.Settings.WineExecutablePath ?? "wine";
+            string winePath;
+            bool isProton = false;
+            
+            // Check if Proton is configured and should be used
+            if (settings.UseProton && !string.IsNullOrEmpty(settings.ProtonPath))
+            {
+                // Look for wine binary within Proton
+                var protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine64");
+                if (!File.Exists(protonWinePath))
+                {
+                    protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine");
+                }
+                
+                if (File.Exists(protonWinePath))
+                {
+                    winePath = protonWinePath;
+                    isProton = true;
+                }
+                else
+                {
+                    // Proton path configured but wine not found
+                    info.IsInstalled = false;
+                    info.Version = $"Proton configured but wine not found at {settings.ProtonPath}";
+                    return info;
+                }
+            }
+            else
+            {
+                winePath = settings.UseSystemWine
+                    ? "wine"
+                    : settings.WineExecutablePath ?? "wine";
+            }
 
             var process = new Process
             {
@@ -376,6 +450,7 @@ public class GameLauncherService
                     Arguments = "--version",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
+                    RedirectStandardError = true,
                     CreateNoWindow = true
                 }
             };
@@ -384,6 +459,7 @@ public class GameLauncherService
             info.Version = await process.StandardOutput.ReadToEndAsync();
             await process.WaitForExitAsync();
             info.IsInstalled = true;
+            info.IsProton = isProton;
             info.Path = winePath;
         }
         catch
@@ -398,6 +474,7 @@ public class GameLauncherService
 public class WineInfo
 {
     public bool IsInstalled { get; set; }
+    public bool IsProton { get; set; }
     public string Version { get; set; } = string.Empty;
     public string Path { get; set; } = string.Empty;
 }
