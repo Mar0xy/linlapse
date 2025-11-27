@@ -217,6 +217,8 @@ public partial class MainWindowViewModel : ViewModelBase
             if (game != null)
             {
                 Games.Add(game);
+                // Load icon in background
+                _ = LoadGameIconAsync(game);
             }
         }
 
@@ -235,6 +237,31 @@ public partial class MainWindowViewModel : ViewModelBase
         if (SelectedGame == null && Games.Count > 0)
         {
             SelectedGame = Games[0];
+        }
+    }
+
+    private async Task LoadGameIconAsync(GameInfo game)
+    {
+        try
+        {
+            var iconPath = await _backgroundService.GetCachedGameIconAsync(game.Id);
+            if (!string.IsNullOrEmpty(iconPath) && File.Exists(iconPath))
+            {
+                // Update the game's logo path
+                game.LogoImagePath = iconPath;
+                
+                // Force UI update by re-finding and updating the game in the collection
+                var index = Games.IndexOf(game);
+                if (index >= 0)
+                {
+                    // Create a copy with the updated path and replace
+                    Games[index] = game;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to load icon for {GameId}", game.Id);
         }
     }
 

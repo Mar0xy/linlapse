@@ -115,11 +115,19 @@
                                         Width="40" Height="40"
                                         CornerRadius="8"
                                         Background="#3b3b5c"
+                                        ClipToBounds="True"
                                         Margin="0,0,12,0">
-                                    <TextBlock Text="🎯" 
-                                               VerticalAlignment="Center"
-                                               HorizontalAlignment="Center"
-                                               FontSize="18"/>
+                                    <!-- Show game icon if available, otherwise show emoji -->
+                                    <Panel>
+                                        <Image Source="{Binding LogoImagePath}"
+                                               Stretch="UniformToFill"
+                                               IsVisible="{Binding LogoImagePath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                        <TextBlock Text="🎯" 
+                                                   VerticalAlignment="Center"
+                                                   HorizontalAlignment="Center"
+                                                   FontSize="18"
+                                                   IsVisible="{Binding LogoImagePath, Converter={x:Static StringConverters.IsNullOrEmpty}}"/>
+                                    </Panel>
                                 </Border>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding DisplayName}"
@@ -172,10 +180,8 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Game Details Panel -->
+            <!-- Game Details Panel - Full bleed background -->
             <Border Grid.Row="0" 
-                    Margin="24"
-                    CornerRadius="16"
                     ClipToBounds="True">
                 <Grid>
                     <!-- Background Image/Video - ZIndex 0 (lowest) -->

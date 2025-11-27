@@ -168,6 +168,60 @@ public class BackgroundService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Get and cache game icon
+    /// </summary>
+    public async Task<string?> GetCachedGameIconAsync(string gameId, CancellationToken cancellationToken = default)
+    {
+        var backgroundInfo = await GetBackgroundInfoAsync(gameId, cancellationToken);
+        if (backgroundInfo == null || string.IsNullOrEmpty(backgroundInfo.IconUrl))
+        {
+            return null;
+        }
+
+        // Determine file extension from URL
+        var extension = ".png";
+        try
+        {
+            var uri = new Uri(backgroundInfo.IconUrl);
+            var ext = Path.GetExtension(uri.AbsolutePath).ToLowerInvariant();
+            if (!string.IsNullOrEmpty(ext))
+            {
+                extension = ext;
+            }
+        }
+        catch { }
+
+        var cacheFileName = $"{gameId}_icon{extension}";
+        var cachePath = Path.Combine(_backgroundCacheDir, cacheFileName);
+
+        // Check if we have a cached version
+        if (File.Exists(cachePath))
+        {
+            var fileInfo = new FileInfo(cachePath);
+            // Use cached file if less than 7 days old
+            if ((DateTime.UtcNow - fileInfo.LastWriteTimeUtc).TotalDays < 7)
+            {
+                return cachePath;
+            }
+        }
+
+        // Download the icon
+        try
+        {
+            var bytes = await _httpClient.GetByteArrayAsync(backgroundInfo.IconUrl, cancellationToken);
+            await File.WriteAllBytesAsync(cachePath, bytes, cancellationToken);
+            Log.Information("Downloaded icon for {GameId}: {Path}", gameId, cachePath);
+            return cachePath;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to download icon for {GameId}", gameId);
+            // Return cached version if download fails
+            return File.Exists(cachePath) ? cachePath : null;
+        }
+    }
+
     private string? GetBackgroundApiUrl(GameInfo game)
     {
         // Use getAllGameBasicInfo API which returns backgrounds including video backgrounds
@@ -250,6 +304,15 @@ public class BackgroundService : IDisposable
                     var bizStr = biz.GetString();
                     if (bizStr != gameBiz)
                         continue;
+
+                    // Found matching game, get icon
+                    if (gameObj.TryGetProperty("icon", out var iconObj) && iconObj.ValueKind == JsonValueKind.Object)
+                    {
+                        if (iconObj.TryGetProperty("url", out var iconUrl))
+                        {
+                            backgroundInfo.IconUrl = iconUrl.GetString();
+                        }
+                    }
 
                     // Found matching game, get backgrounds array
                     if (gameInfo.TryGetProperty("backgrounds", out var backgrounds) && 
@@ -382,6 +445,7 @@ public class BackgroundInfo
     public string? FallbackUrl { get; set; }
     public string? Color { get; set; }
     public string? LocalPath { get; set; }
+    public string? IconUrl { get; set; }
 }
 
 /// <summary>
