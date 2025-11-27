@@ -102,6 +102,23 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _enableLogging = true;
 
+    [ObservableProperty]
+    private bool _isJadeiteAvailable;
+
+    [ObservableProperty]
+    private bool _isDownloadingJadeite;
+
+    // Region selection per game type
+    [ObservableProperty]
+    private GameRegion _selectedRegion = GameRegion.Global;
+
+    // Available regions for dropdown
+    public ObservableCollection<GameRegion> AvailableRegions { get; } = new()
+    {
+        GameRegion.Global,
+        GameRegion.China
+    };
+
     // Voice language options for settings
     public ObservableCollection<VoiceLanguageOption> VoiceLanguageOptions { get; } = new()
     {
@@ -111,6 +128,7 @@ public partial class MainWindowViewModel : ViewModelBase
         new VoiceLanguageOption { Code = "ko-kr", DisplayName = "Korean" }
     };
 
+    // Filtered games based on selected region (one per game type)
     public ObservableCollection<GameInfo> Games { get; } = new();
 
     public string AppVersion => "1.0.0";
@@ -162,6 +180,9 @@ public partial class MainWindowViewModel : ViewModelBase
             // Scan for installed games
             await _gameService.ScanForInstalledGamesAsync();
 
+            // Check Jadeite availability
+            IsJadeiteAvailable = _launcherService.IsJadeiteAvailable();
+
             // Check for updates
             StatusMessage = "Checking for updates...";
             await CheckForUpdatesAsync();
@@ -181,19 +202,28 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void RefreshGamesCollection()
     {
-        // Remember the currently selected game ID
-        var selectedGameId = SelectedGame?.Id;
+        // Remember the currently selected game type (not ID, since ID changes with region)
+        var selectedGameType = SelectedGame?.GameType;
 
         Games.Clear();
-        foreach (var game in _gameService.Games)
+        
+        // Group games by type and show only the ones for the selected region
+        var gameTypes = new[] { GameType.HonkaiImpact3rd, GameType.GenshinImpact, GameType.HonkaiStarRail, GameType.ZenlessZoneZero };
+        
+        foreach (var gameType in gameTypes)
         {
-            Games.Add(game);
+            // Try to find the game for the selected region, fall back to any available
+            var game = _gameService.GetGameByTypeAndRegion(gameType, SelectedRegion);
+            if (game != null)
+            {
+                Games.Add(game);
+            }
         }
 
-        // Restore selection by finding the game with the same ID
-        if (!string.IsNullOrEmpty(selectedGameId))
+        // Restore selection by finding the game with the same type
+        if (selectedGameType != null)
         {
-            var gameToSelect = Games.FirstOrDefault(g => g.Id == selectedGameId);
+            var gameToSelect = Games.FirstOrDefault(g => g.GameType == selectedGameType);
             if (gameToSelect != null)
             {
                 SelectedGame = gameToSelect;
@@ -206,6 +236,21 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             SelectedGame = Games[0];
         }
+    }
+
+    partial void OnSelectedRegionChanged(GameRegion value)
+    {
+        // Save the selected region to settings
+        if (SelectedGame != null)
+        {
+            _settingsService.UpdateSettings(settings =>
+            {
+                settings.SelectedRegionPerGame[SelectedGame.GameType.ToString()] = value.ToString();
+            });
+        }
+        
+        // Refresh games list with new region
+        RefreshGamesCollection();
     }
 
     private void UpdateGameInCollection(GameInfo updatedGame)
@@ -781,4 +826,51 @@ public partial class MainWindowViewModel : ViewModelBase
         StatusMessage = "Settings reset to defaults";
         Log.Information("Settings reset to defaults");
     }
+
+    [RelayCommand]
+    private async Task DownloadJadeiteAsync()
+    {
+        if (IsDownloadingJadeite) return;
+
+        try
+        {
+            IsDownloadingJadeite = true;
+            StatusMessage = "Downloading Jadeite...";
+
+            var progress = new Progress<double>(p =>
+            {
+                ProgressPercent = p;
+                ProgressText = $"Downloading Jadeite: {p:F1}%";
+            });
+
+            var success = await _launcherService.DownloadJadeiteAsync(progress);
+
+            if (success)
+            {
+                IsJadeiteAvailable = true;
+                StatusMessage = "Jadeite downloaded successfully! HSR and HI3 can now be launched.";
+            }
+            else
+            {
+                StatusMessage = "Failed to download Jadeite";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to download Jadeite");
+            StatusMessage = $"Failed to download Jadeite: {ex.Message}";
+        }
+        finally
+        {
+            IsDownloadingJadeite = false;
+            ProgressPercent = 0;
+            ProgressText = string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Check if the selected game requires Jadeite
+    /// </summary>
+    public bool SelectedGameRequiresJadeite =>
+        SelectedGame != null && GameLauncherService.RequiresJadeite(SelectedGame.GameType);
 }

@@ -79,6 +79,7 @@ public class GameService
     {
         _games = new List<GameInfo>
         {
+            // Global Region Games
             new()
             {
                 Id = "hi3-global",
@@ -114,12 +115,61 @@ public class GameService
                 GameType = GameType.ZenlessZoneZero,
                 Region = GameRegion.Global,
                 State = GameState.NotInstalled
+            },
+            // China Region Games
+            new()
+            {
+                Id = "hi3-cn",
+                Name = "honkai3rd",
+                DisplayName = "Honkai Impact 3rd",
+                GameType = GameType.HonkaiImpact3rd,
+                Region = GameRegion.China,
+                State = GameState.NotInstalled
+            },
+            new()
+            {
+                Id = "gi-cn",
+                Name = "yuanshen",
+                DisplayName = "Genshin Impact",
+                GameType = GameType.GenshinImpact,
+                Region = GameRegion.China,
+                State = GameState.NotInstalled
+            },
+            new()
+            {
+                Id = "hsr-cn",
+                Name = "starrail",
+                DisplayName = "Honkai: Star Rail",
+                GameType = GameType.HonkaiStarRail,
+                Region = GameRegion.China,
+                State = GameState.NotInstalled
+            },
+            new()
+            {
+                Id = "zzz-cn",
+                Name = "zenless",
+                DisplayName = "Zenless Zone Zero",
+                GameType = GameType.ZenlessZoneZero,
+                Region = GameRegion.China,
+                State = GameState.NotInstalled
             }
         };
 
         SaveGames();
         Log.Information("Initialized with {Count} known games", _games.Count);
     }
+
+    /// <summary>
+    /// Get games filtered by region for a specific game type
+    /// </summary>
+    public IEnumerable<GameInfo> GetGamesByType(GameType gameType) =>
+        _games.Where(g => g.GameType == gameType);
+
+    /// <summary>
+    /// Get game by type and region
+    /// </summary>
+    public GameInfo? GetGameByTypeAndRegion(GameType gameType, GameRegion region) =>
+        _games.FirstOrDefault(g => g.GameType == gameType && g.Region == region);
 
     public GameInfo? GetGame(string id) => _games.FirstOrDefault(g => g.Id == id);
 

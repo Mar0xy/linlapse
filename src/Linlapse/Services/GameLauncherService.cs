@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using Linlapse.Models;
 using Serilog;
 
@@ -9,6 +10,9 @@ namespace Linlapse.Services;
 /// </summary>
 public class GameLauncherService
 {
+    private const string JadeiteDownloadUrl = "https://codeberg.org/mkrsym1/jadeite/releases/download/v5.0.1/v5.0.1.zip";
+    private const string JadeiteExeName = "jadeite.exe";
+    
     private readonly SettingsService _settingsService;
     private readonly GameService _gameService;
     private readonly Dictionary<string, Process> _runningGames = new();
@@ -23,6 +27,118 @@ public class GameLauncherService
     }
 
     public bool IsGameRunning(string gameId) => _runningGames.ContainsKey(gameId);
+
+    /// <summary>
+    /// Check if Jadeite is downloaded and available
+    /// </summary>
+    public bool IsJadeiteAvailable()
+    {
+        var jadeiteDir = GetJadeiteDirectory();
+        var jadeitePath = Path.Combine(jadeiteDir, JadeiteExeName);
+        return File.Exists(jadeitePath);
+    }
+
+    /// <summary>
+    /// Get the path to Jadeite executable
+    /// </summary>
+    public string GetJaditePath()
+    {
+        var customPath = _settingsService.Settings.JadeiteExecutablePath;
+        if (!string.IsNullOrEmpty(customPath) && File.Exists(customPath))
+        {
+            return customPath;
+        }
+        
+        var jadeiteDir = GetJadeiteDirectory();
+        return Path.Combine(jadeiteDir, JadeiteExeName);
+    }
+
+    private static string GetJadeiteDirectory()
+    {
+        var configDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".local", "share", "linlapse", "jadeite");
+        Directory.CreateDirectory(configDir);
+        return configDir;
+    }
+
+    /// <summary>
+    /// Download and extract Jadeite for HSR/HI3 anti-cheat bypass
+    /// </summary>
+    public async Task<bool> DownloadJadeiteAsync(IProgress<double>? progress = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var jadeiteDir = GetJadeiteDirectory();
+            var zipPath = Path.Combine(jadeiteDir, "jadeite.zip");
+            var jadeitePath = Path.Combine(jadeiteDir, JadeiteExeName);
+
+            Log.Information("Downloading Jadeite from {Url}", JadeiteDownloadUrl);
+
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
+
+            using var response = await httpClient.GetAsync(JadeiteDownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            var totalBytes = response.Content.Headers.ContentLength ?? -1;
+            var downloadedBytes = 0L;
+
+            await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            await using var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+
+            var buffer = new byte[8192];
+            int bytesRead;
+
+            while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
+            {
+                await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                downloadedBytes += bytesRead;
+
+                if (totalBytes > 0)
+                {
+                    progress?.Report((double)downloadedBytes / totalBytes * 100);
+                }
+            }
+
+            Log.Information("Extracting Jadeite to {Path}", jadeiteDir);
+
+            // Extract jadeite.exe from the zip
+            using (var archive = ZipFile.OpenRead(zipPath))
+            {
+                var jadeiteEntry = archive.Entries.FirstOrDefault(e => 
+                    e.Name.Equals(JadeiteExeName, StringComparison.OrdinalIgnoreCase));
+                
+                if (jadeiteEntry != null)
+                {
+                    jadeiteEntry.ExtractToFile(jadeitePath, overwrite: true);
+                    Log.Information("Extracted {File} to {Path}", JadeiteExeName, jadeitePath);
+                }
+                else
+                {
+                    Log.Error("Could not find {File} in the downloaded archive", JadeiteExeName);
+                    return false;
+                }
+            }
+
+            // Clean up zip file
+            File.Delete(zipPath);
+
+            Log.Information("Jadeite downloaded and extracted successfully");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to download Jadeite");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Check if a game requires Jadeite to run
+    /// </summary>
+    public static bool RequiresJadeite(GameType gameType) =>
+        gameType is GameType.HonkaiStarRail or GameType.HonkaiImpact3rd;
 
     public async Task<bool> LaunchGameAsync(string gameId)
     {
@@ -126,10 +242,32 @@ public class GameLauncherService
             Directory.CreateDirectory(winePrefix);
         }
 
+        // Determine if we need to use Jadeite for this game
+        var useJadeite = RequiresJadeite(game.GameType);
+        string arguments;
+        
+        if (useJadeite && IsJadeiteAvailable())
+        {
+            var jadeitePath = GetJaditePath();
+            // Launch with Jadeite: wine jadeite.exe "game_executable.exe"
+            arguments = $"\"{jadeitePath}\" \"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+            Log.Information("Using Jadeite launcher for {Game}", game.DisplayName);
+        }
+        else if (useJadeite && !IsJadeiteAvailable())
+        {
+            Log.Warning("Jadeite is required for {Game} but not installed. Download it from Settings.", game.DisplayName);
+            // Still try to launch, but it may not work
+            arguments = $"\"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+        }
+        else
+        {
+            arguments = $"\"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+        }
+
         var startInfo = new ProcessStartInfo
         {
             FileName = winePath,
-            Arguments = $"\"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}",
+            Arguments = arguments,
             WorkingDirectory = Path.GetDirectoryName(executablePath),
             UseShellExecute = false,
             CreateNoWindow = false,
@@ -155,7 +293,7 @@ public class GameLauncherService
             }
         }
 
-        Log.Information("Starting game with command: {Wine} \"{Exe}\"", winePath, executablePath);
+        Log.Information("Starting game with command: {Wine} {Args}", winePath, arguments);
         Log.Debug("Wine prefix: {Prefix}", winePrefix);
 
         var process = new Process { StartInfo = startInfo };

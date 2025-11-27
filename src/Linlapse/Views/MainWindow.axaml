@@ -76,9 +76,9 @@
 
         <!-- Sidebar -->
         <Border Grid.Column="0" Background="#16162a" Padding="16">
-            <Grid RowDefinitions="Auto,*,Auto">
+            <Grid RowDefinitions="Auto,Auto,*,Auto">
                 <!-- Logo/Title -->
-                <StackPanel Grid.Row="0" Margin="0,0,0,24">
+                <StackPanel Grid.Row="0" Margin="0,0,0,16">
                     <TextBlock Text="🎮 Linlapse" 
                                FontSize="24" 
                                FontWeight="Bold" 
@@ -89,8 +89,21 @@
                                Margin="0,4,0,0"/>
                 </StackPanel>
 
+                <!-- Region Selector -->
+                <Border Grid.Row="1" Background="#27272a" CornerRadius="8" Padding="12" Margin="0,0,0,16">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Region" FontSize="12" Foreground="#a1a1aa"/>
+                        <ComboBox ItemsSource="{Binding AvailableRegions}"
+                                  SelectedItem="{Binding SelectedRegion}"
+                                  HorizontalAlignment="Stretch"
+                                  Background="#3f3f46"
+                                  Foreground="White"
+                                  BorderBrush="#52525b"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- Game List -->
-                <ListBox Grid.Row="1" 
+                <ListBox Grid.Row="2" 
                          ItemsSource="{Binding Games}"
                          SelectedItem="{Binding SelectedGame}"
                          Background="Transparent"
@@ -134,7 +147,7 @@
                 </ListBox>
 
                 <!-- Bottom Actions -->
-                <StackPanel Grid.Row="2" Spacing="8">
+                <StackPanel Grid.Row="3" Spacing="8">
                     <Button Content="⚙ Settings" 
                             Classes="secondary"
                             HorizontalAlignment="Stretch"
@@ -490,6 +503,46 @@
                                              Foreground="White"
                                              BorderBrush="#52525b"
                                              Padding="12,8"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Jadeite (Anti-Cheat Bypass) -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Jadeite (Anti-Cheat Bypass)" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                <TextBlock Text="Required for Honkai: Star Rail and Honkai Impact 3rd to run on Linux" 
+                                           Foreground="#a1a1aa" 
+                                           FontSize="12"
+                                           TextWrapping="Wrap"/>
+                                
+                                <StackPanel Spacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="✓ Jadeite is installed and ready" 
+                                                       FontSize="12" 
+                                                       Foreground="#22c55e"
+                                                       IsVisible="{Binding IsJadeiteAvailable}"/>
+                                            <TextBlock Text="✗ Jadeite is not installed" 
+                                                       FontSize="12" 
+                                                       Foreground="#ef4444"
+                                                       IsVisible="{Binding !IsJadeiteAvailable}"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" 
+                                                Content="Download Jadeite" 
+                                                Classes="primary"
+                                                Command="{Binding DownloadJadeiteCommand}"
+                                                IsEnabled="{Binding !IsDownloadingJadeite}"
+                                                IsVisible="{Binding !IsJadeiteAvailable}"/>
+                                    </Grid>
+                                    
+                                    <TextBlock Text="Jadeite is an open-source tool from Codeberg that allows HoYoverse games to run on Linux via Wine."
+                                               FontSize="11"
+                                               Foreground="#71717a"
+                                               TextWrapping="Wrap"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>

@@ -26,6 +26,16 @@ public class AppSettings
     public int MaxConcurrentDownloads { get; set; } = 4;
     public List<string> GameInstallPaths { get; set; } = new();
     public Dictionary<string, GameSettings> GameSpecificSettings { get; set; } = new();
+    
+    /// <summary>
+    /// Selected region per game type (key = GameType enum name, value = GameRegion enum name)
+    /// </summary>
+    public Dictionary<string, string> SelectedRegionPerGame { get; set; } = new();
+    
+    /// <summary>
+    /// Path to Jadeite executable for launching HSR and HI3 with anti-cheat bypass
+    /// </summary>
+    public string? JadeiteExecutablePath { get; set; }
 }
 
 /// <summary>
