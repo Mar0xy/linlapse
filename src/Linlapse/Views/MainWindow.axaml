@@ -170,9 +170,15 @@
                         MuteAudio="True"/>
                     
                     <!-- Fallback Gradient (shown when no background) -->
-                    <Border Background="Linear Gradient(135deg, #2d2d5a 0%, #1a1a2e 100%)"
-                            Opacity="0.95"
-                            IsVisible="{Binding BackgroundSource, Converter={x:Static StringConverters.IsNullOrEmpty}}"/>
+                    <Border Opacity="0.95"
+                            IsVisible="{Binding BackgroundSource, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                                <GradientStop Color="#2d2d5a" Offset="0"/>
+                                <GradientStop Color="#1a1a2e" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
                     
                     <!-- Content when game is selected -->
                     <Grid IsVisible="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNotNull}}"
