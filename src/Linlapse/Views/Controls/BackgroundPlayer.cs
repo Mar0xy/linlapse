@@ -34,16 +34,19 @@ public class BackgroundPlayer : UserControl, IDisposable
     private const int VideoPitch = VideoWidth * 4; // BGRA = 4 bytes per pixel
     private const int BufferSize = VideoPitch * VideoHeight;
 
-    private WriteableBitmap? _videoBitmap;
+    // Double buffering for smooth playback
+    private WriteableBitmap? _videoBitmapA;
+    private WriteableBitmap? _videoBitmapB;
+    private bool _useBufferA = true;
     private byte[]? _videoBuffer;
     private readonly object _bufferLock = new();
     private GCHandle _bufferHandle;
     private IntPtr _bufferPtr;
     private bool _isPlayingVideo;
+    private volatile bool _frameReady;
 
-    // Frame rate limiter - target ~30fps for background video (saves resources)
-    private DateTime _lastFrameTime = DateTime.MinValue;
-    private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(33); // ~30fps
+    // Timer for smooth UI updates
+    private DispatcherTimer? _renderTimer;
 
     public static readonly StyledProperty<string?> SourceProperty =
         AvaloniaProperty.Register<BackgroundPlayer, string?>(nameof(Source));
@@ -139,14 +142,27 @@ public class BackgroundPlayer : UserControl, IDisposable
                 _bufferHandle = GCHandle.Alloc(_videoBuffer, GCHandleType.Pinned);
                 _bufferPtr = _bufferHandle.AddrOfPinnedObject();
 
-                // Create WriteableBitmap
-                _videoBitmap = new WriteableBitmap(
+                // Create two WriteableBitmaps for double buffering
+                _videoBitmapA = new WriteableBitmap(
                     new PixelSize(VideoWidth, VideoHeight),
                     new Vector(96, 96),
                     Avalonia.Platform.PixelFormat.Bgra8888,
                     AlphaFormat.Premul);
 
-                Log.Debug("Video buffer initialized: {Width}x{Height}", VideoWidth, VideoHeight);
+                _videoBitmapB = new WriteableBitmap(
+                    new PixelSize(VideoWidth, VideoHeight),
+                    new Vector(96, 96),
+                    Avalonia.Platform.PixelFormat.Bgra8888,
+                    AlphaFormat.Premul);
+
+                // Set up timer for smooth rendering at 60fps
+                _renderTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(16) // ~60fps
+                };
+                _renderTimer.Tick += OnRenderTick;
+
+                Log.Debug("Video buffer initialized: {Width}x{Height} with double buffering", VideoWidth, VideoHeight);
             }
             catch (Exception ex)
             {
@@ -209,6 +225,8 @@ public class BackgroundPlayer : UserControl, IDisposable
     {
         StopVideo();
         _isPlayingVideo = false;
+        _frameReady = false;
+        _renderTimer?.Stop();
 
         if (_imageView != null)
         {
@@ -220,12 +238,14 @@ public class BackgroundPlayer : UserControl, IDisposable
     {
         lock (_bufferLock)
         {
+            _renderTimer?.Stop();
             if (_bufferHandle.IsAllocated)
             {
                 _bufferHandle.Free();
             }
             _videoBuffer = null;
-            _videoBitmap = null;
+            _videoBitmapA = null;
+            _videoBitmapB = null;
             _bufferPtr = IntPtr.Zero;
         }
     }
@@ -318,6 +338,7 @@ public class BackgroundPlayer : UserControl, IDisposable
         try
         {
             _isPlayingVideo = true;
+            _frameReady = false;
 
             // Create MediaPlayer with video callbacks for frame-by-frame rendering
             if (_mediaPlayer == null)
@@ -332,7 +353,7 @@ public class BackgroundPlayer : UserControl, IDisposable
                 // Set up video callbacks for frame-by-frame rendering
                 _mediaPlayer.SetVideoCallbacks(
                     LockVideo,
-                    null,
+                    UnlockVideo,
                     DisplayVideo
                 );
             }
@@ -362,6 +383,7 @@ public class BackgroundPlayer : UserControl, IDisposable
                 }
 
                 _mediaPlayer.Play(media);
+                _renderTimer?.Start();
                 Log.Debug("Playing background video with frame rendering: {Path}", source);
             }
         }
@@ -379,43 +401,49 @@ public class BackgroundPlayer : UserControl, IDisposable
         return IntPtr.Zero;
     }
 
+    private void UnlockVideo(IntPtr opaque, IntPtr picture, IntPtr planes)
+    {
+        // Frame is ready to be displayed
+        _frameReady = true;
+    }
+
     private void DisplayVideo(IntPtr opaque, IntPtr picture)
     {
-        // Rate limit to save resources
-        var now = DateTime.Now;
-        if (now - _lastFrameTime < FrameInterval)
-            return;
-        _lastFrameTime = now;
+        // This is called after unlock - frame is fully ready
+    }
 
-        if (_isDisposed || !_isPlayingVideo) return;
+    private void OnRenderTick(object? sender, EventArgs e)
+    {
+        if (_isDisposed || !_isPlayingVideo || !_frameReady) return;
 
-        // Copy frame to bitmap on UI thread
-        Dispatcher.UIThread.InvokeAsync(() =>
+        try
         {
-            try
+            lock (_bufferLock)
             {
-                lock (_bufferLock)
+                if (_videoBuffer == null || _imageView == null) return;
+
+                // Get the current bitmap to write to
+                var targetBitmap = _useBufferA ? _videoBitmapA : _videoBitmapB;
+                if (targetBitmap == null) return;
+
+                // Copy frame data to bitmap
+                using (var fb = targetBitmap.Lock())
                 {
-                    if (_videoBitmap == null || _videoBuffer == null || _imageView == null)
-                        return;
-
-                    using (var fb = _videoBitmap.Lock())
-                    {
-                        Marshal.Copy(_videoBuffer, 0, fb.Address, _videoBuffer.Length);
-                    }
-
-                    // Update image source
-                    if (_isPlayingVideo)
-                    {
-                        _imageView.Source = _videoBitmap;
-                    }
+                    Marshal.Copy(_videoBuffer, 0, fb.Address, BufferSize);
                 }
+
+                // Swap to the other buffer for next frame
+                _useBufferA = !_useBufferA;
+
+                // Update image source (this triggers the redraw)
+                _imageView.Source = targetBitmap;
+                _frameReady = false;
             }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Error rendering video frame");
-            }
-        });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Error rendering video frame");
+        }
     }
 
     private void OnVideoEndReached(object? sender, EventArgs e)
@@ -434,6 +462,7 @@ public class BackgroundPlayer : UserControl, IDisposable
     {
         try
         {
+            _renderTimer?.Stop();
             if (_mediaPlayer != null)
             {
                 _mediaPlayer.Stop();
@@ -450,9 +479,11 @@ public class BackgroundPlayer : UserControl, IDisposable
         if (_isDisposed) return;
         _isDisposed = true;
         _isPlayingVideo = false;
+        _frameReady = false;
 
         try
         {
+            _renderTimer?.Stop();
             StopVideo();
 
             if (_mediaPlayer != null)
