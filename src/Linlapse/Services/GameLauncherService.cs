@@ -84,22 +84,31 @@ public class GameLauncherService
             var totalBytes = response.Content.Headers.ContentLength ?? -1;
             var downloadedBytes = 0L;
 
-            await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            await using var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
-
-            var buffer = new byte[8192];
-            int bytesRead;
-
-            while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
+            // Download to temp file first, then move
+            var tempZipPath = zipPath + ".tmp";
+            
+            await using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
+            await using (var fileStream = new FileStream(tempZipPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
             {
-                await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-                downloadedBytes += bytesRead;
+                var buffer = new byte[8192];
+                int bytesRead;
 
-                if (totalBytes > 0)
+                while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
                 {
-                    progress?.Report((double)downloadedBytes / totalBytes * 100);
+                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                    downloadedBytes += bytesRead;
+
+                    if (totalBytes > 0)
+                    {
+                        progress?.Report((double)downloadedBytes / totalBytes * 100);
+                    }
                 }
             }
+            
+            // Move temp file to final location (stream is now closed)
+            if (File.Exists(zipPath))
+                File.Delete(zipPath);
+            File.Move(tempZipPath, zipPath);
 
             Log.Information("Extracting Jadeite to {Path}", jadeiteDir);
 

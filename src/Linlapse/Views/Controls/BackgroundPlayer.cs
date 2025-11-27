@@ -73,11 +73,14 @@ public class BackgroundPlayer : UserControl, IDisposable
                 // Initialize LibVLCSharp core - on Linux this uses system libvlc
                 Core.Initialize();
 
-                // Create shared LibVLC instance with minimal options for better embedding
-                // Note: LibVLCSharp.Avalonia handles embedding, we just need a clean LibVLC instance
+                // Create shared LibVLC instance with options optimized for embedded playback
+                // These options ensure the video is rendered inside our control, not in a separate window
                 _sharedLibVLC = new LibVLC(
                     "--quiet",                      // Reduce logging
-                    "--no-video-title-show"         // Don't show title on video
+                    "--no-video-title-show",        // Don't show title on video
+                    "--no-xlib",                    // Disable Xlib threading (safer for embedded)
+                    "--vout=xcb_x11",               // Use X11 output (better embedding on Linux)
+                    "--avcodec-hw=none"             // Disable hardware decoding for compatibility
                 );
 
                 _libVLCAvailable = true;
