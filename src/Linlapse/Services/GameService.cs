@@ -31,10 +31,15 @@ public class GameService
         _gamesFilePath = Path.Combine(SettingsService.GetDataDirectory(), "games.json");
         _games = LoadGames();
 
-        // Initialize with known games if empty
+        // Initialize with known games if empty, or ensure all known games exist
         if (_games.Count == 0)
         {
             InitializeKnownGames();
+        }
+        else
+        {
+            // Ensure all known games exist (in case new regions were added)
+            EnsureAllKnownGamesExist();
         }
     }
 
@@ -75,86 +80,111 @@ public class GameService
         }
     }
 
+    /// <summary>
+    /// Ensure all known games exist in the games list (handles adding new regions/games)
+    /// </summary>
+    private void EnsureAllKnownGamesExist()
+    {
+        var knownGames = GetAllKnownGames();
+        var added = false;
+
+        foreach (var knownGame in knownGames)
+        {
+            if (!_games.Any(g => g.Id == knownGame.Id))
+            {
+                _games.Add(knownGame);
+                added = true;
+                Log.Information("Added missing game: {Name} ({Id})", knownGame.DisplayName, knownGame.Id);
+            }
+        }
+
+        if (added)
+        {
+            SaveGames();
+        }
+    }
+
+    private static List<GameInfo> GetAllKnownGames() => new()
+    {
+        // Global Region Games
+        new()
+        {
+            Id = "hi3-global",
+            Name = "honkai3rd",
+            DisplayName = "Honkai Impact 3rd",
+            GameType = GameType.HonkaiImpact3rd,
+            Region = GameRegion.Global,
+            State = GameState.NotInstalled
+        },
+        new()
+        {
+            Id = "gi-global",
+            Name = "genshin",
+            DisplayName = "Genshin Impact",
+            GameType = GameType.GenshinImpact,
+            Region = GameRegion.Global,
+            State = GameState.NotInstalled
+        },
+        new()
+        {
+            Id = "hsr-global",
+            Name = "starrail",
+            DisplayName = "Honkai: Star Rail",
+            GameType = GameType.HonkaiStarRail,
+            Region = GameRegion.Global,
+            State = GameState.NotInstalled
+        },
+        new()
+        {
+            Id = "zzz-global",
+            Name = "zenless",
+            DisplayName = "Zenless Zone Zero",
+            GameType = GameType.ZenlessZoneZero,
+            Region = GameRegion.Global,
+            State = GameState.NotInstalled
+        },
+        // China Region Games
+        new()
+        {
+            Id = "hi3-cn",
+            Name = "honkai3rd",
+            DisplayName = "Honkai Impact 3rd",
+            GameType = GameType.HonkaiImpact3rd,
+            Region = GameRegion.China,
+            State = GameState.NotInstalled
+        },
+        new()
+        {
+            Id = "gi-cn",
+            Name = "yuanshen",
+            DisplayName = "Genshin Impact",
+            GameType = GameType.GenshinImpact,
+            Region = GameRegion.China,
+            State = GameState.NotInstalled
+        },
+        new()
+        {
+            Id = "hsr-cn",
+            Name = "starrail",
+            DisplayName = "Honkai: Star Rail",
+            GameType = GameType.HonkaiStarRail,
+            Region = GameRegion.China,
+            State = GameState.NotInstalled
+        },
+        new()
+        {
+            Id = "zzz-cn",
+            Name = "zenless",
+            DisplayName = "Zenless Zone Zero",
+            GameType = GameType.ZenlessZoneZero,
+            Region = GameRegion.China,
+            State = GameState.NotInstalled
+        }
+    };
+
     private void InitializeKnownGames()
     {
-        _games = new List<GameInfo>
-        {
-            // Global Region Games
-            new()
-            {
-                Id = "hi3-global",
-                Name = "honkai3rd",
-                DisplayName = "Honkai Impact 3rd",
-                GameType = GameType.HonkaiImpact3rd,
-                Region = GameRegion.Global,
-                State = GameState.NotInstalled
-            },
-            new()
-            {
-                Id = "gi-global",
-                Name = "genshin",
-                DisplayName = "Genshin Impact",
-                GameType = GameType.GenshinImpact,
-                Region = GameRegion.Global,
-                State = GameState.NotInstalled
-            },
-            new()
-            {
-                Id = "hsr-global",
-                Name = "starrail",
-                DisplayName = "Honkai: Star Rail",
-                GameType = GameType.HonkaiStarRail,
-                Region = GameRegion.Global,
-                State = GameState.NotInstalled
-            },
-            new()
-            {
-                Id = "zzz-global",
-                Name = "zenless",
-                DisplayName = "Zenless Zone Zero",
-                GameType = GameType.ZenlessZoneZero,
-                Region = GameRegion.Global,
-                State = GameState.NotInstalled
-            },
-            // China Region Games
-            new()
-            {
-                Id = "hi3-cn",
-                Name = "honkai3rd",
-                DisplayName = "Honkai Impact 3rd",
-                GameType = GameType.HonkaiImpact3rd,
-                Region = GameRegion.China,
-                State = GameState.NotInstalled
-            },
-            new()
-            {
-                Id = "gi-cn",
-                Name = "yuanshen",
-                DisplayName = "Genshin Impact",
-                GameType = GameType.GenshinImpact,
-                Region = GameRegion.China,
-                State = GameState.NotInstalled
-            },
-            new()
-            {
-                Id = "hsr-cn",
-                Name = "starrail",
-                DisplayName = "Honkai: Star Rail",
-                GameType = GameType.HonkaiStarRail,
-                Region = GameRegion.China,
-                State = GameState.NotInstalled
-            },
-            new()
-            {
-                Id = "zzz-cn",
-                Name = "zenless",
-                DisplayName = "Zenless Zone Zero",
-                GameType = GameType.ZenlessZoneZero,
-                Region = GameRegion.China,
-                State = GameState.NotInstalled
-            }
-        };
-
+        _games = GetAllKnownGames();
         SaveGames();
         Log.Information("Initialized with {Count} known games", _games.Count);
     }
