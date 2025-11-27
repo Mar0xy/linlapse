@@ -59,13 +59,13 @@ public class GameLauncherService
             {
                 _runningGames[gameId] = process;
                 _gameService.UpdateGameState(gameId, GameState.Running);
-                
+
                 game.LastPlayed = DateTime.UtcNow;
-                
+
                 // Monitor process exit
                 process.EnableRaisingEvents = true;
                 process.Exited += (_, _) => OnGameExited(game);
-                
+
                 GameStarted?.Invoke(this, game);
                 Log.Information("Game started: {Name}", game.DisplayName);
                 return true;
@@ -82,7 +82,7 @@ public class GameLauncherService
     private string? GetGameExecutable(GameInfo game)
     {
         var basePath = game.InstallPath;
-        
+
         return game.GameType switch
         {
             GameType.HonkaiImpact3rd => FindExecutable(basePath, "BH3.exe", "Games/BH3.exe"),
@@ -111,13 +111,13 @@ public class GameLauncherService
     {
         var settings = _settingsService.Settings;
         var gameSettings = settings.GameSpecificSettings.GetValueOrDefault(game.Id);
-        
-        var winePrefix = gameSettings?.UseCustomWinePrefix == true 
-            ? gameSettings.CustomWinePrefixPath 
+
+        var winePrefix = gameSettings?.UseCustomWinePrefix == true
+            ? gameSettings.CustomWinePrefixPath
             : settings.WinePrefixPath;
-        
-        var winePath = settings.UseSystemWine 
-            ? "wine" 
+
+        var winePath = settings.UseSystemWine
+            ? "wine"
             : settings.WineExecutablePath ?? "wine";
 
         // Ensure wine prefix exists
@@ -142,10 +142,10 @@ public class GameLauncherService
         {
             startInfo.Environment["WINEPREFIX"] = winePrefix;
         }
-        
+
         startInfo.Environment["WINEDLLOVERRIDES"] = "mscoree,mshtml=";
         startInfo.Environment["DXVK_HUD"] = "compiler";
-        
+
         // Apply custom environment variables
         if (gameSettings?.EnvironmentVariables != null)
         {
@@ -159,7 +159,7 @@ public class GameLauncherService
         Log.Debug("Wine prefix: {Prefix}", winePrefix);
 
         var process = new Process { StartInfo = startInfo };
-        
+
         // Log output
         process.OutputDataReceived += (_, e) =>
         {
@@ -214,11 +214,11 @@ public class GameLauncherService
     public async Task<WineInfo> GetWineInfoAsync()
     {
         var info = new WineInfo();
-        
+
         try
         {
-            var winePath = _settingsService.Settings.UseSystemWine 
-                ? "wine" 
+            var winePath = _settingsService.Settings.UseSystemWine
+                ? "wine"
                 : _settingsService.Settings.WineExecutablePath ?? "wine";
 
             var process = new Process

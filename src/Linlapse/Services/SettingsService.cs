@@ -35,7 +35,7 @@ public class SettingsService
     private static string GetConfigDirectory()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var configBase = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") 
+        var configBase = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME")
                          ?? Path.Combine(home, ".config");
         return Path.Combine(configBase, "linlapse");
     }
@@ -43,7 +43,7 @@ public class SettingsService
     public static string GetDataDirectory()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var dataBase = Environment.GetEnvironmentVariable("XDG_DATA_HOME") 
+        var dataBase = Environment.GetEnvironmentVariable("XDG_DATA_HOME")
                        ?? Path.Combine(home, ".local", "share");
         var dataDir = Path.Combine(dataBase, "linlapse");
         Directory.CreateDirectory(dataDir);
@@ -53,7 +53,7 @@ public class SettingsService
     public static string GetCacheDirectory()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var cacheBase = Environment.GetEnvironmentVariable("XDG_CACHE_HOME") 
+        var cacheBase = Environment.GetEnvironmentVariable("XDG_CACHE_HOME")
                         ?? Path.Combine(home, ".cache");
         var cacheDir = Path.Combine(cacheBase, "linlapse");
         Directory.CreateDirectory(cacheDir);

@@ -64,7 +64,7 @@ public class RepairService
 
                     var relativePath = Path.GetRelativePath(game.InstallPath, filePath);
                     var fileInfo = new FileInfo(filePath);
-                    
+
                     results.Add(new FileVerificationResult
                     {
                         FilePath = relativePath,
@@ -128,9 +128,9 @@ public class RepairService
 
             repairProgress.State = RepairState.Completed;
             progress?.Report(repairProgress);
-            
+
             _gameService.UpdateGameState(gameId, GameState.Ready);
-            
+
             Log.Information("Verification completed for {GameId}: {Total} files, {Broken} issues found",
                 gameId, repairProgress.TotalFiles, repairProgress.BrokenFiles);
 
@@ -200,10 +200,10 @@ public class RepairService
                         {
                             var fileUrl = $"{baseDownloadUrl.TrimEnd('/')}/{file.FilePath}";
                             var success = await _downloadService.DownloadFileAsync(
-                                fileUrl, 
-                                filePath, 
+                                fileUrl,
+                                filePath,
                                 cancellationToken: cancellationToken);
-                            
+
                             if (success)
                             {
                                 repairProgress.RepairedFiles++;
@@ -232,10 +232,10 @@ public class RepairService
 
             repairProgress.State = RepairState.Completed;
             progress?.Report(repairProgress);
-            
+
             _gameService.UpdateGameState(gameId, GameState.Ready);
             RepairCompleted?.Invoke(this, gameId);
-            
+
             Log.Information("Repair completed for {GameId}: {Repaired}/{Total} files repaired",
                 gameId, repairProgress.RepairedFiles, repairProgress.TotalFiles);
 

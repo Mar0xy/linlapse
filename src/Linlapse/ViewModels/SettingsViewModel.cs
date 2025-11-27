@@ -87,7 +87,7 @@ public partial class SettingsViewModel : ViewModelBase
             settings.MaxConcurrentDownloads = MaxConcurrentDownloads;
             settings.Theme = SelectedTheme;
         });
-        
+
         Log.Information("Settings saved");
     }
 
@@ -110,7 +110,7 @@ public partial class SettingsViewModel : ViewModelBase
             settings.MaxConcurrentDownloads = 4;
             settings.Theme = ThemeMode.System;
         });
-        
+
         LoadSettings();
         Log.Information("Settings reset to defaults");
     }

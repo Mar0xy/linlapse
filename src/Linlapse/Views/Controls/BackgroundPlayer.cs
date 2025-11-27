@@ -18,7 +18,7 @@ public class BackgroundPlayer : UserControl, IDisposable
     private static LibVLC? _sharedLibVLC;
     private static bool _libVLCInitialized;
     private static readonly object _initLock = new();
-    
+
     private MediaPlayer? _mediaPlayer;
     private Image? _imageView;
     private Border? _overlayBorder;
@@ -78,14 +78,14 @@ public class BackgroundPlayer : UserControl, IDisposable
             {
                 // Initialize LibVLCSharp core - on Linux this uses system libvlc
                 Core.Initialize();
-                
+
                 // Create shared LibVLC instance with options for background video
                 _sharedLibVLC = new LibVLC(
                     "--no-xlib",           // Don't use Xlib threading
                     "--quiet",             // Reduce logging
                     "--no-video-title-show" // Don't show title on video
                 );
-                
+
                 _libVLCInitialized = true;
                 Log.Information("LibVLC initialized successfully");
             }
@@ -208,7 +208,7 @@ public class BackgroundPlayer : UserControl, IDisposable
             using var httpClient = new HttpClient();
             httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
             var bytes = await httpClient.GetByteArrayAsync(url);
-            
+
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 try
@@ -293,7 +293,7 @@ public class BackgroundPlayer : UserControl, IDisposable
                 {
                     media.AddOption(":no-audio");
                 }
-                
+
                 _mediaPlayer.Play(media);
                 Log.Debug("Playing background video: {Path}", source);
             }

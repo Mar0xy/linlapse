@@ -36,7 +36,7 @@ public class CacheService
         await Task.Run(() =>
         {
             var cacheDirectories = GetCacheDirectories(game);
-            
+
             foreach (var (name, path) in cacheDirectories)
             {
                 if (Directory.Exists(path))
@@ -44,7 +44,7 @@ public class CacheService
                     var dirInfo = new DirectoryInfo(path);
                     var files = dirInfo.GetFiles("*", SearchOption.AllDirectories);
                     var size = files.Sum(f => f.Length);
-                    
+
                     cacheInfo.CacheEntries.Add(new CacheEntry
                     {
                         Name = name,
@@ -52,7 +52,7 @@ public class CacheService
                         Size = size,
                         FileCount = files.Length
                     });
-                    
+
                     cacheInfo.TotalSize += size;
                     cacheInfo.TotalFiles += files.Length;
                 }
@@ -66,7 +66,7 @@ public class CacheService
     /// Clear all caches for a game
     /// </summary>
     public async Task<bool> ClearAllCachesAsync(
-        string gameId, 
+        string gameId,
         IProgress<CacheProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -118,7 +118,7 @@ public class CacheService
     /// Clear a specific cache for a game
     /// </summary>
     public async Task<bool> ClearSpecificCacheAsync(
-        string gameId, 
+        string gameId,
         string cacheName,
         CancellationToken cancellationToken = default)
     {

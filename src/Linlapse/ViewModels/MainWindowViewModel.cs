@@ -95,7 +95,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _gameService.GameStateChanged += (_, game) => UpdateGameInCollection(game);
         _launcherService.GameStarted += (_, _) => IsGameRunning = true;
         _launcherService.GameStopped += (_, _) => IsGameRunning = false;
-        
+
         _downloadService.DownloadProgressChanged += OnDownloadProgress;
         _installationService.InstallProgressChanged += OnInstallProgress;
         _repairService.RepairProgressChanged += OnRepairProgress;
@@ -115,8 +115,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
             // Check Wine installation
             var wineInfo = await _launcherService.GetWineInfoAsync();
-            WineVersion = wineInfo.IsInstalled 
-                ? $"Wine: {wineInfo.Version.Trim()}" 
+            WineVersion = wineInfo.IsInstalled
+                ? $"Wine: {wineInfo.Version.Trim()}"
                 : "Wine not found - Please install Wine";
 
             // Scan for installed games
@@ -160,7 +160,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             var index = Games.IndexOf(existingGame);
             Games[index] = updatedGame;
-            
+
             if (SelectedGame?.Id == updatedGame.Id)
             {
                 SelectedGame = updatedGame;
@@ -298,9 +298,9 @@ public partial class MainWindowViewModel : ViewModelBase
             StatusMessage = $"Clearing cache for {SelectedGame.DisplayName}...";
 
             var success = await _cacheService.ClearAllCachesAsync(SelectedGame.Id);
-            
-            StatusMessage = success 
-                ? "Cache cleared successfully!" 
+
+            StatusMessage = success
+                ? "Cache cleared successfully!"
                 : "Failed to clear cache";
 
             // Refresh cache info
@@ -326,7 +326,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             StatusMessage = $"Checking for updates...";
             AvailableUpdate = await _updateService.CheckForUpdatesAsync(SelectedGame.Id);
-            
+
             if (AvailableUpdate?.HasUpdate == true)
             {
                 StatusMessage = $"Update available: {AvailableUpdate.LatestVersion}";
@@ -367,9 +367,9 @@ public partial class MainWindowViewModel : ViewModelBase
             });
 
             var success = await _updateService.ApplyUpdateAsync(SelectedGame.Id, progress);
-            
-            StatusMessage = success 
-                ? "Update completed successfully!" 
+
+            StatusMessage = success
+                ? "Update completed successfully!"
                 : "Update failed";
         }
         catch (Exception ex)
@@ -401,9 +401,9 @@ public partial class MainWindowViewModel : ViewModelBase
             });
 
             var success = await _updateService.DownloadPreloadAsync(SelectedGame.Id, progress);
-            
-            StatusMessage = success 
-                ? "Preload completed!" 
+
+            StatusMessage = success
+                ? "Preload completed!"
                 : "No preload available";
         }
         catch (Exception ex)
@@ -442,14 +442,14 @@ public partial class MainWindowViewModel : ViewModelBase
             var sizeMb = downloadInfo.TotalSize / 1024.0 / 1024.0;
             var sizeGb = sizeMb / 1024.0;
             DownloadSizeText = sizeGb >= 1 ? $"{sizeGb:F2} GB" : $"{sizeMb:F0} MB";
-            
+
             StatusMessage = $"Downloading {SelectedGame.DisplayName} ({DownloadSizeText})...";
 
             var progress = new Progress<GameDownloadProgress>(p =>
             {
                 ProgressPercent = p.PercentComplete;
                 var speedMb = p.SpeedBytesPerSecond / 1024.0 / 1024.0;
-                
+
                 ProgressText = p.State switch
                 {
                     GameDownloadState.FetchingInfo => "Fetching download information...",
@@ -467,8 +467,8 @@ public partial class MainWindowViewModel : ViewModelBase
             });
 
             var success = await _gameDownloadService.DownloadAndInstallGameAsync(
-                SelectedGame.Id, 
-                progress: progress, 
+                SelectedGame.Id,
+                progress: progress,
                 cancellationToken: _downloadCts.Token);
 
             if (success)
@@ -580,15 +580,15 @@ public partial class MainWindowViewModel : ViewModelBase
             CacheInfo = null;
             DownloadInfo = null;
             DownloadSizeText = string.Empty;
-            
+
             // Load background for the selected game
             _ = LoadBackgroundAsync(value.Id);
-            
+
             if (value.IsInstalled)
             {
                 // Load cache info in background
                 _ = LoadCacheInfoAsync();
-                
+
                 // Check for updates in background
                 _ = CheckForUpdatesAsync();
             }
@@ -605,7 +605,7 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             var backgroundInfo = await _backgroundService.GetBackgroundInfoAsync(gameId);
-            
+
             if (backgroundInfo != null)
             {
                 if (backgroundInfo.Type == BackgroundType.Color && !string.IsNullOrEmpty(backgroundInfo.Color))
@@ -619,12 +619,12 @@ public partial class MainWindowViewModel : ViewModelBase
                 {
                     // Download and cache the background
                     var cachedPath = await _backgroundService.GetCachedBackgroundAsync(gameId);
-                    
+
                     if (!string.IsNullOrEmpty(cachedPath))
                     {
                         BackgroundSource = cachedPath;
                         IsVideoBackground = backgroundInfo.Type == BackgroundType.Video;
-                        Log.Debug("Set background for {GameId}: {Path} (Video: {IsVideo})", 
+                        Log.Debug("Set background for {GameId}: {Path} (Video: {IsVideo})",
                             gameId, cachedPath, IsVideoBackground);
                     }
                     else if (!string.IsNullOrEmpty(backgroundInfo.Url))

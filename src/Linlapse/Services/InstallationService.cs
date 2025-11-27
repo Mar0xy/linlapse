@@ -19,7 +19,7 @@ public class InstallationService
     public event EventHandler<(string GameId, Exception Error)>? InstallFailed;
 
     public InstallationService(
-        SettingsService settingsService, 
+        SettingsService settingsService,
         DownloadService downloadService,
         GameService gameService)
     {
@@ -59,7 +59,7 @@ public class InstallationService
 
             // Determine archive type and extract
             var extension = Path.GetExtension(archivePath).ToLowerInvariant();
-            
+
             switch (extension)
             {
                 case ".zip":
@@ -76,7 +76,7 @@ public class InstallationService
             installProgress.State = InstallState.Completed;
             progress?.Report(installProgress);
             InstallCompleted?.Invoke(this, gameId);
-            
+
             Log.Information("Installation completed: {GameId}", gameId);
             return true;
         }
@@ -113,7 +113,7 @@ public class InstallationService
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var destinationFileName = Path.Combine(destinationPath, entry.FullName);
-                
+
                 // Handle directories
                 if (string.IsNullOrEmpty(entry.Name))
                 {
@@ -129,7 +129,7 @@ public class InstallationService
                 }
 
                 entry.ExtractToFile(destinationFileName, overwrite: true);
-                
+
                 installProgress.ProcessedFiles++;
                 installProgress.ProcessedBytes += entry.Length;
                 installProgress.CurrentFile = entry.FullName;
@@ -182,9 +182,9 @@ public class InstallationService
             });
 
             var downloadSuccess = await _downloadService.DownloadFileAsync(
-                downloadUrl, 
-                archivePath, 
-                downloadProgress, 
+                downloadUrl,
+                archivePath,
+                downloadProgress,
                 cancellationToken);
 
             if (!downloadSuccess)
@@ -198,10 +198,10 @@ public class InstallationService
             progress?.Report(installProgress);
 
             var installSuccess = await InstallFromArchiveAsync(
-                gameId, 
-                archivePath, 
-                installPath, 
-                progress, 
+                gameId,
+                archivePath,
+                installPath,
+                progress,
                 cancellationToken);
 
             // Cleanup temp file
@@ -250,7 +250,7 @@ public class InstallationService
 
             _gameService.UpdateGameInstallPath(gameId, string.Empty);
             _gameService.UpdateGameState(gameId, GameState.NotInstalled);
-            
+
             Log.Information("Game uninstalled: {GameId}", gameId);
             return true;
         }

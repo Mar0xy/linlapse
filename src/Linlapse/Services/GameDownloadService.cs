@@ -93,7 +93,7 @@ public class GameDownloadService : IDisposable
 
         // Use default install path if not specified
         installPath ??= Path.Combine(
-            _settingsService.Settings.DefaultGameInstallPath ?? 
+            _settingsService.Settings.DefaultGameInstallPath ??
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games"),
             game.Name);
 
@@ -132,7 +132,7 @@ public class GameDownloadService : IDisposable
 
             // Download main game package
             var mainPackagePath = Path.Combine(tempDir, $"game_package{Path.GetExtension(downloadInfo.DownloadUrl)}");
-            
+
             var fileProgress = new Progress<DownloadProgress>(dp =>
             {
                 downloadProgress.DownloadedBytes = dp.BytesDownloaded;
@@ -162,14 +162,14 @@ public class GameDownloadService : IDisposable
                 progress?.Report(downloadProgress);
 
                 // Default to English voice pack
-                var selectedVoicePack = downloadInfo.VoicePacks.FirstOrDefault(v => 
+                var selectedVoicePack = downloadInfo.VoicePacks.FirstOrDefault(v =>
                     v.Language.Contains("en", StringComparison.OrdinalIgnoreCase) ||
                     v.Language.Contains("English", StringComparison.OrdinalIgnoreCase));
 
                 if (selectedVoicePack != null && !string.IsNullOrEmpty(selectedVoicePack.DownloadUrl))
                 {
                     var voicePackPath = Path.Combine(tempDir, $"voice_{selectedVoicePack.Language}{Path.GetExtension(selectedVoicePack.DownloadUrl)}");
-                    
+
                     var voiceDownloadSuccess = await _downloadService.DownloadFileAsync(
                         selectedVoicePack.DownloadUrl,
                         voicePackPath,
@@ -212,7 +212,7 @@ public class GameDownloadService : IDisposable
             foreach (var downloadedFile in downloadedFiles)
             {
                 var extension = Path.GetExtension(downloadedFile).ToLowerInvariant();
-                
+
                 if (extension == ".zip" || extension == ".7z")
                 {
                     var installProgress = new Progress<InstallProgress>(ip =>
@@ -265,7 +265,7 @@ public class GameDownloadService : IDisposable
             downloadProgress.State = GameDownloadState.Failed;
             downloadProgress.ErrorMessage = ex.Message;
             progress?.Report(downloadProgress);
-            
+
             Log.Error(ex, "Game download failed: {GameId}", gameId);
             GameInstallFailed?.Invoke(this, (gameId, ex));
             return false;
@@ -411,22 +411,22 @@ public class GameDownloadService : IDisposable
                 if (gameData.TryGetProperty("latest", out var latest))
                 {
                     downloadInfo.Version = latest.GetProperty("version").GetString() ?? "";
-                    
+
                     if (latest.TryGetProperty("path", out var path))
                     {
                         downloadInfo.DownloadUrl = path.GetString() ?? "";
                     }
-                    
+
                     if (latest.TryGetProperty("size", out var size))
                     {
                         downloadInfo.TotalSize = size.GetInt64();
                     }
-                    
+
                     if (latest.TryGetProperty("package_size", out var packageSize))
                     {
                         downloadInfo.PackageSize = packageSize.GetInt64();
                     }
-                    
+
                     if (latest.TryGetProperty("md5", out var md5))
                     {
                         downloadInfo.PackageMd5 = md5.GetString();
@@ -458,14 +458,14 @@ public class GameDownloadService : IDisposable
                     if (package.TryGetProperty("game", out var pkgGame))
                     {
                         var gameId = pkgGame.TryGetProperty("id", out var id) ? id.GetString() : "";
-                        
+
                         // Match by game type
                         if (package.TryGetProperty("main", out var main))
                         {
                             if (main.TryGetProperty("major", out var major))
                             {
                                 downloadInfo.Version = major.TryGetProperty("version", out var ver) ? ver.GetString() ?? "" : "";
-                                
+
                                 if (major.TryGetProperty("game_pkgs", out var gamePkgs))
                                 {
                                     var firstPkg = gamePkgs.EnumerateArray().FirstOrDefault();

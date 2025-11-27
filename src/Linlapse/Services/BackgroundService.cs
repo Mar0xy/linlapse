@@ -51,7 +51,7 @@ public class BackgroundService : IDisposable
 
             if (backgroundInfo != null)
             {
-                Log.Information("Retrieved background info for {GameId}: {Type}", 
+                Log.Information("Retrieved background info for {GameId}: {Type}",
                     gameId, backgroundInfo.Type);
             }
 
@@ -194,7 +194,7 @@ public class BackgroundService : IDisposable
             };
 
             // Try to find background in different response formats
-            
+
             // Format 1: adv -> background
             if (data.TryGetProperty("adv", out var adv))
             {
@@ -203,7 +203,7 @@ public class BackgroundService : IDisposable
                     backgroundInfo.Url = bg.GetString() ?? "";
                     backgroundInfo.Type = BackgroundType.Image;
                 }
-                
+
                 // Check for video background (usually in bg_checksum or separate field)
                 if (adv.TryGetProperty("bg_checksum", out _))
                 {
@@ -238,20 +238,20 @@ public class BackgroundService : IDisposable
                 if (content.TryGetProperty("backgrounds", out var contentBgs) && contentBgs.GetArrayLength() > 0)
                 {
                     var firstBg = contentBgs[0];
-                    
+
                     if (firstBg.TryGetProperty("background", out var bgImg))
                     {
-                        backgroundInfo.Url = bgImg.TryGetProperty("url", out var imgUrl) 
-                            ? imgUrl.GetString() ?? "" 
+                        backgroundInfo.Url = bgImg.TryGetProperty("url", out var imgUrl)
+                            ? imgUrl.GetString() ?? ""
                             : bgImg.GetString() ?? "";
                     }
 
                     if (firstBg.TryGetProperty("video", out var videoObj))
                     {
-                        var videoUrl = videoObj.TryGetProperty("url", out var vUrl) 
-                            ? vUrl.GetString() 
+                        var videoUrl = videoObj.TryGetProperty("url", out var vUrl)
+                            ? vUrl.GetString()
                             : videoObj.GetString();
-                        
+
                         if (!string.IsNullOrEmpty(videoUrl))
                         {
                             backgroundInfo.VideoUrl = videoUrl;
@@ -267,11 +267,11 @@ public class BackgroundService : IDisposable
                 if (gameContent.TryGetProperty("backgrounds", out var gcBgs) && gcBgs.GetArrayLength() > 0)
                 {
                     var firstBg = gcBgs[0];
-                    
+
                     if (firstBg.TryGetProperty("background", out var bgData))
                     {
-                        backgroundInfo.Url = bgData.TryGetProperty("url", out var bUrl) 
-                            ? bUrl.GetString() ?? "" 
+                        backgroundInfo.Url = bgData.TryGetProperty("url", out var bUrl)
+                            ? bUrl.GetString() ?? ""
                             : "";
                     }
                     else if (firstBg.TryGetProperty("url", out var directUrl))
@@ -281,10 +281,10 @@ public class BackgroundService : IDisposable
 
                     if (firstBg.TryGetProperty("video", out var videoData))
                     {
-                        var videoUrl = videoData.TryGetProperty("url", out var vdUrl) 
-                            ? vdUrl.GetString() 
+                        var videoUrl = videoData.TryGetProperty("url", out var vdUrl)
+                            ? vdUrl.GetString()
                             : "";
-                        
+
                         if (!string.IsNullOrEmpty(videoUrl))
                         {
                             backgroundInfo.VideoUrl = videoUrl;

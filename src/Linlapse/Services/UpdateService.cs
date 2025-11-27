@@ -22,7 +22,7 @@ public class UpdateService : IDisposable
     public event EventHandler<(string GameId, Exception Error)>? UpdateFailed;
 
     public UpdateService(
-        GameService gameService, 
+        GameService gameService,
         DownloadService downloadService,
         InstallationService installationService)
     {
@@ -182,8 +182,8 @@ public class UpdateService : IDisposable
             return false;
         }
 
-        var updateProgress = new UpdateProgress 
-        { 
+        var updateProgress = new UpdateProgress
+        {
             GameId = gameId,
             State = UpdateState.Preloading
         };
@@ -220,7 +220,7 @@ public class UpdateService : IDisposable
                 cancellationToken);
 
             _gameService.UpdateGameState(gameId, GameState.Ready);
-            
+
             if (success)
             {
                 Log.Information("Preload completed for {GameId}", gameId);
@@ -339,7 +339,7 @@ public class UpdateService : IDisposable
                     cancellationToken.ThrowIfCancellationRequested();
 
                     var destPath = Path.Combine(game.InstallPath, entry.FullName);
-                    
+
                     if (string.IsNullOrEmpty(entry.Name))
                     {
                         Directory.CreateDirectory(destPath);
@@ -349,7 +349,7 @@ public class UpdateService : IDisposable
                         var dir = Path.GetDirectoryName(destPath);
                         if (!string.IsNullOrEmpty(dir))
                             Directory.CreateDirectory(dir);
-                        
+
                         entry.ExtractToFile(destPath, overwrite: true);
                     }
 
@@ -427,7 +427,7 @@ public class UpdateService : IDisposable
                     if (gameData.TryGetProperty("latest", out var latest))
                     {
                         updateInfo.LatestVersion = latest.GetProperty("version").GetString() ?? "";
-                        
+
                         if (latest.TryGetProperty("path", out var path))
                         {
                             updateInfo.FullPackageUrl = path.GetString();

@@ -30,7 +30,7 @@ public class GameService
         _settingsService = settingsService;
         _gamesFilePath = Path.Combine(SettingsService.GetDataDirectory(), "games.json");
         _games = LoadGames();
-        
+
         // Initialize with known games if empty
         if (_games.Count == 0)
         {
@@ -116,7 +116,7 @@ public class GameService
                 State = GameState.NotInstalled
             }
         };
-        
+
         SaveGames();
         Log.Information("Initialized with {Count} known games", _games.Count);
     }
@@ -178,7 +178,7 @@ public class GameService
     public async Task ScanForInstalledGamesAsync()
     {
         Log.Information("Scanning for installed games...");
-        
+
         var searchPaths = new List<string>
         {
             _settingsService.Settings.DefaultGameInstallPath ?? "",
@@ -208,7 +208,7 @@ public class GameService
                 foreach (var dir in directories)
                 {
                     var dirName = Path.GetFileName(dir).ToLowerInvariant();
-                    
+
                     // Check for known game signatures
                     foreach (var game in _games.Where(g => !g.IsInstalled))
                     {

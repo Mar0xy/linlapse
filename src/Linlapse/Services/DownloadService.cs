@@ -32,8 +32,8 @@ public class DownloadService : IDisposable
     /// Download a file with progress reporting and resume support
     /// </summary>
     public async Task<bool> DownloadFileAsync(
-        string url, 
-        string destinationPath, 
+        string url,
+        string destinationPath,
         IProgress<DownloadProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -44,7 +44,7 @@ public class DownloadService : IDisposable
         try
         {
             await _downloadSemaphore.WaitAsync(cts.Token);
-            
+
             var directory = Path.GetDirectoryName(destinationPath);
             if (!string.IsNullOrEmpty(directory))
             {
@@ -66,7 +66,7 @@ public class DownloadService : IDisposable
             }
 
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-            
+
             if (!response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.PartialContent)
             {
                 throw new HttpRequestException($"Failed to download: {response.StatusCode}");
@@ -92,8 +92,8 @@ public class DownloadService : IDisposable
             };
 
             await using var contentStream = await response.Content.ReadAsStreamAsync(cts.Token);
-            await using var fileStream = new FileStream(tempPath, 
-                existingLength > 0 ? FileMode.Append : FileMode.Create, 
+            await using var fileStream = new FileStream(tempPath,
+                existingLength > 0 ? FileMode.Append : FileMode.Create,
                 FileAccess.Write, FileShare.None, 81920, true);
 
             var buffer = new byte[81920];
@@ -149,7 +149,7 @@ public class DownloadService : IDisposable
             downloadProgress.State = DownloadState.Completed;
             progress?.Report(downloadProgress);
             DownloadCompleted?.Invoke(this, fileName);
-            
+
             Log.Information("Download completed: {FileName}", fileName);
             return true;
         }
@@ -192,10 +192,10 @@ public class DownloadService : IDisposable
             });
 
             var success = await DownloadFileAsync(file.Url, file.DestinationPath, fileProgress, cancellationToken);
-            
+
             Interlocked.Increment(ref completed);
             if (success) Interlocked.Increment(ref successful);
-            
+
             progress?.Report((completed, total, null));
         });
 

@@ -72,7 +72,7 @@ public class GameSettingsService
 
                 var content = GenerateGraphicsConfig(game.GameType, settings);
                 File.WriteAllText(configPath, content);
-                
+
                 Log.Information("Graphics settings saved for {GameId}", gameId);
                 return true;
             }
@@ -139,7 +139,7 @@ public class GameSettingsService
 
                 var content = GenerateAudioConfig(game.GameType, settings);
                 File.WriteAllText(configPath, content);
-                
+
                 Log.Information("Audio settings saved for {GameId}", gameId);
                 return true;
             }
@@ -163,8 +163,8 @@ public class GameSettingsService
         }
 
         var voicePacks = new List<VoicePackInfo>();
-        var allLanguages = new[] 
-        { 
+        var allLanguages = new[]
+        {
             ("en", "English"),
             ("ja", "Japanese"),
             ("ko", "Korean"),
@@ -287,8 +287,8 @@ public class GameSettingsService
     {
         return game.GameType switch
         {
-            GameType.GenshinImpact => Path.Combine(game.InstallPath, 
-                game.Region == GameRegion.China ? "YuanShen_Data" : "GenshinImpact_Data", 
+            GameType.GenshinImpact => Path.Combine(game.InstallPath,
+                game.Region == GameRegion.China ? "YuanShen_Data" : "GenshinImpact_Data",
                 "StreamingAssets", "AudioAssets"),
             GameType.HonkaiStarRail => Path.Combine(game.InstallPath, "StarRail_Data", "Persistent", "Audio"),
             GameType.ZenlessZoneZero => Path.Combine(game.InstallPath, "ZenlessZoneZero_Data", "StreamingAssets", "Audio"),
@@ -335,7 +335,7 @@ public class GameSettingsService
                 using var doc = JsonDocument.Parse(content);
                 var root = doc.RootElement;
 
-                if (root.TryGetProperty("graphicsData", out var graphicsData) || 
+                if (root.TryGetProperty("graphicsData", out var graphicsData) ||
                     root.TryGetProperty("GraphicsSettings", out graphicsData))
                 {
                     if (graphicsData.TryGetProperty("ResolutionWidth", out var width))
@@ -378,7 +378,7 @@ public class GameSettingsService
                 using var doc = JsonDocument.Parse(content);
                 var root = doc.RootElement;
 
-                if (root.TryGetProperty("audioData", out var audioData) || 
+                if (root.TryGetProperty("audioData", out var audioData) ||
                     root.TryGetProperty("AudioSettings", out audioData))
                 {
                     if (audioData.TryGetProperty("MasterVolume", out var master))

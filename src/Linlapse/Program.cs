@@ -11,11 +11,11 @@ sealed class Program
     {
         // Configure logging
         var logPath = Path.Combine(SettingsService.GetDataDirectory(), "logs", "linlapse-.log");
-        
+
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.Console()
-            .WriteTo.File(logPath, 
+            .WriteTo.File(logPath,
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 7)
             .CreateLogger();
