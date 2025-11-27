@@ -70,21 +70,16 @@ public class BackgroundPlayer : UserControl, IDisposable
 
             try
             {
-                // Initialize LibVLCSharp core - on Linux this uses system libvlc
+                // Initialize LibVLCSharp core
                 Core.Initialize();
 
-                // Create shared LibVLC instance with options optimized for embedded playback
-                // These options ensure the video is rendered inside our control, not in a separate window
+                // Create LibVLC with minimal options - let LibVLCSharp.Avalonia handle video output
                 _sharedLibVLC = new LibVLC(
-                    "--quiet",                      // Reduce logging
-                    "--no-video-title-show",        // Don't show title on video
-                    "--no-xlib",                    // Disable Xlib threading (safer for embedded)
-                    "--vout=xcb_x11",               // Use X11 output (better embedding on Linux)
-                    "--avcodec-hw=none"             // Disable hardware decoding for compatibility
+                    "--no-video-title-show"
                 );
 
                 _libVLCAvailable = true;
-                Log.Information("LibVLC initialized successfully for embedded video playback");
+                Log.Information("LibVLC initialized successfully");
             }
             catch (Exception ex)
             {
@@ -97,10 +92,9 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     private void InitializeComponent()
     {
-        // Create the grid to hold background
         _contentGrid = new Grid();
 
-        // Create image view (default/fallback)
+        // Image view for static backgrounds
         _imageView = new Image
         {
             Stretch = Stretch.UniformToFill,
@@ -108,6 +102,18 @@ public class BackgroundPlayer : UserControl, IDisposable
             VerticalAlignment = VerticalAlignment.Center
         };
         _contentGrid.Children.Add(_imageView);
+
+        // Pre-create VideoView - it needs to be in the visual tree before MediaPlayer is assigned
+        if (_libVLCAvailable)
+        {
+            _videoView = new VideoView
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+                IsVisible = false
+            };
+            _contentGrid.Children.Insert(0, _videoView);
+        }
 
         Content = _contentGrid;
     }
@@ -131,11 +137,9 @@ public class BackgroundPlayer : UserControl, IDisposable
         var source = Source;
         var isVideo = IsVideo;
 
-        // Always update if source changed OR if video state changed
         if (source == _currentSource && isVideo == _currentIsVideo)
             return;
 
-        // Clear previous state
         ClearBackground();
 
         _currentSource = source;
@@ -147,7 +151,6 @@ public class BackgroundPlayer : UserControl, IDisposable
             return;
         }
 
-        // Auto-detect video from file extension if IsVideo is false
         var isActuallyVideo = isVideo || IsVideoFile(source);
 
         if (isActuallyVideo && _libVLCAvailable && _sharedLibVLC != null)
@@ -156,10 +159,8 @@ public class BackgroundPlayer : UserControl, IDisposable
         }
         else if (isActuallyVideo && !_libVLCAvailable)
         {
-            // Video file but LibVLC not available - show nothing or fallback
             Log.Warning("Cannot display video background - LibVLC not available. " +
                 "Install VLC: sudo apt install vlc (Debian/Ubuntu) or sudo dnf install vlc (Fedora)");
-            // Don't try to load as image - it will fail
         }
         else
         {
@@ -169,14 +170,17 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     private void ClearBackground()
     {
-        // Stop video playback
         StopVideo();
 
-        // Clear image
         if (_imageView != null)
         {
             _imageView.Source = null;
             _imageView.IsVisible = true;
+        }
+
+        if (_videoView != null)
+        {
+            _videoView.IsVisible = false;
         }
     }
 
@@ -184,13 +188,11 @@ public class BackgroundPlayer : UserControl, IDisposable
     {
         try
         {
-            if (_imageView == null || _contentGrid == null) return;
+            if (_imageView == null) return;
 
-            // Make sure video is stopped and removed
             StopVideo();
-
-            // Show image view
             _imageView.IsVisible = true;
+            if (_videoView != null) _videoView.IsVisible = false;
 
             if (File.Exists(source))
             {
@@ -213,7 +215,6 @@ public class BackgroundPlayer : UserControl, IDisposable
             }
             else if (source.StartsWith("http://") || source.StartsWith("https://"))
             {
-                // Load from URL asynchronously
                 _ = LoadImageFromUrlAsync(source);
             }
         }
@@ -263,51 +264,35 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     private void ShowVideo(string source)
     {
-        if (_sharedLibVLC == null || _contentGrid == null)
+        if (_sharedLibVLC == null || _videoView == null)
         {
-            Log.Warning("LibVLC not available for video playback");
+            Log.Warning("LibVLC or VideoView not available for video playback");
             return;
         }
 
         try
         {
-            // Hide image view when showing video
-            if (_imageView != null)
-                _imageView.IsVisible = false;
+            // Hide image, show video
+            if (_imageView != null) _imageView.IsVisible = false;
+            _videoView.IsVisible = true;
 
-            // Stop any existing playback first
-            if (_mediaPlayer != null)
-            {
-                _mediaPlayer.Stop();
-            }
-
-            // Create VideoView first, then assign MediaPlayer
-            // This order is important for proper embedding on Linux
-            if (_videoView == null)
-            {
-                _videoView = new VideoView
-                {
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    VerticalAlignment = VerticalAlignment.Stretch
-                };
-                // Insert at beginning so it's behind other content
-                _contentGrid.Children.Insert(0, _videoView);
-                Log.Debug("Created VideoView for embedded playback");
-            }
-
-            // Create media player if needed and assign to VideoView
+            // Create MediaPlayer if needed
             if (_mediaPlayer == null)
             {
                 _mediaPlayer = new MediaPlayer(_sharedLibVLC);
                 _mediaPlayer.Mute = MuteAudio;
-                _mediaPlayer.EnableHardwareDecoding = false; // Disable for better Linux compatibility
                 _mediaPlayer.EndReached += OnVideoEndReached;
             }
-            
-            // Assign MediaPlayer to VideoView (important for embedding)
+            else
+            {
+                _mediaPlayer.Stop();
+            }
+
+            // IMPORTANT: Assign MediaPlayer to VideoView BEFORE playing
+            // This ensures LibVLCSharp.Avalonia can set up the video output correctly
             _videoView.MediaPlayer = _mediaPlayer;
 
-            // Create and play media
+            // Create media
             Media? media = null;
             if (source.StartsWith("http://") || source.StartsWith("https://"))
             {
@@ -320,9 +305,7 @@ public class BackgroundPlayer : UserControl, IDisposable
 
             if (media != null)
             {
-                // Add options for looping, muting
-                media.AddOption(":input-repeat=65535"); // Loop many times
-                media.AddOption(":no-video-title-show");
+                media.AddOption(":input-repeat=65535");
                 if (MuteAudio)
                 {
                     media.AddOption(":no-audio");
@@ -340,7 +323,6 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     private void OnVideoEndReached(object? sender, EventArgs e)
     {
-        // Loop the video by restarting from beginning
         Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (_mediaPlayer != null && !_isDisposed)
@@ -355,12 +337,9 @@ public class BackgroundPlayer : UserControl, IDisposable
     {
         try
         {
-            _mediaPlayer?.Stop();
-
-            if (_videoView != null && _contentGrid != null)
+            if (_mediaPlayer != null)
             {
-                _contentGrid.Children.Remove(_videoView);
-                _videoView = null;
+                _mediaPlayer.Stop();
             }
         }
         catch (Exception ex)
@@ -391,7 +370,6 @@ public class BackgroundPlayer : UserControl, IDisposable
         }
     }
 
-    // Note: Don't dispose _sharedLibVLC here as it's shared across instances
     public static void DisposeSharedResources()
     {
         _sharedLibVLC?.Dispose();
