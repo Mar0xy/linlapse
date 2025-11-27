@@ -1,16 +1,23 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AssemblyName>Linlapse</AssemblyName>
     <RootNamespace>Linlapse</RootNamespace>
     <Version>1.0.0</Version>
     <Description>Linux Game Launcher - A Linux port inspired by Collapse Launcher for miHoYo games</Description>
     <Authors>Linlapse Contributors</Authors>
+    <!-- Linux-specific settings -->
+    <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
+    <PublishReadyToRun>true</PublishReadyToRun>
+  </PropertyGroup>
+  
+  <!-- Windows-specific manifest only included on Windows -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
