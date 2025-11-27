@@ -419,12 +419,12 @@ public class GameDownloadService : IDisposable
 
                     if (latest.TryGetProperty("size", out var size))
                     {
-                        downloadInfo.TotalSize = size.GetInt64();
+                        downloadInfo.TotalSize = GetInt64FromElement(size);
                     }
 
                     if (latest.TryGetProperty("package_size", out var packageSize))
                     {
-                        downloadInfo.PackageSize = packageSize.GetInt64();
+                        downloadInfo.PackageSize = GetInt64FromElement(packageSize);
                     }
 
                     if (latest.TryGetProperty("md5", out var md5))
@@ -441,7 +441,7 @@ public class GameDownloadService : IDisposable
                             {
                                 Language = vp.GetProperty("language").GetString() ?? "",
                                 DownloadUrl = vp.TryGetProperty("path", out var vpPath) ? vpPath.GetString() ?? "" : "",
-                                Size = vp.TryGetProperty("size", out var vpSize) ? vpSize.GetInt64() : 0,
+                                Size = vp.TryGetProperty("size", out var vpSize) ? GetInt64FromElement(vpSize) : 0,
                                 Md5 = vp.TryGetProperty("md5", out var vpMd5) ? vpMd5.GetString() : null
                             };
                             downloadInfo.VoicePacks.Add(voicePack);
@@ -506,6 +506,26 @@ public class GameDownloadService : IDisposable
             Log.Warning(ex, "Failed to parse download response for {GameId}", game.Id);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Helper method to get Int64 from a JsonElement that might be a string or number
+    /// </summary>
+    private static long GetInt64FromElement(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Number)
+        {
+            return element.GetInt64();
+        }
+        else if (element.ValueKind == JsonValueKind.String)
+        {
+            var str = element.GetString();
+            if (long.TryParse(str, out var value))
+            {
+                return value;
+            }
+        }
+        return 0;
     }
 
     public void Dispose()

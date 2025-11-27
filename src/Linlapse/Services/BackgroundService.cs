@@ -196,7 +196,7 @@ public class BackgroundService : IDisposable
             // Try to find background in different response formats
 
             // Format 1: adv -> background
-            if (data.TryGetProperty("adv", out var adv))
+            if (data.TryGetProperty("adv", out var adv) && adv.ValueKind == JsonValueKind.Object)
             {
                 if (adv.TryGetProperty("background", out var bg))
                 {
@@ -212,7 +212,8 @@ public class BackgroundService : IDisposable
             }
 
             // Format 2: backgrounds array
-            if (data.TryGetProperty("backgrounds", out var backgrounds) && backgrounds.GetArrayLength() > 0)
+            if (data.TryGetProperty("backgrounds", out var backgrounds) && 
+                backgrounds.ValueKind == JsonValueKind.Array && backgrounds.GetArrayLength() > 0)
             {
                 var firstBg = backgrounds[0];
                 if (firstBg.TryGetProperty("background", out var bgUrl))
@@ -233,22 +234,23 @@ public class BackgroundService : IDisposable
             }
 
             // Format 3: content -> backgrounds
-            if (data.TryGetProperty("content", out var content))
+            if (data.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Object)
             {
-                if (content.TryGetProperty("backgrounds", out var contentBgs) && contentBgs.GetArrayLength() > 0)
+                if (content.TryGetProperty("backgrounds", out var contentBgs) && 
+                    contentBgs.ValueKind == JsonValueKind.Array && contentBgs.GetArrayLength() > 0)
                 {
                     var firstBg = contentBgs[0];
 
-                    if (firstBg.TryGetProperty("background", out var bgImg))
+                    if (firstBg.TryGetProperty("background", out var bgImg) && bgImg.ValueKind != JsonValueKind.Null)
                     {
-                        backgroundInfo.Url = bgImg.TryGetProperty("url", out var imgUrl)
+                        backgroundInfo.Url = bgImg.ValueKind == JsonValueKind.Object && bgImg.TryGetProperty("url", out var imgUrl)
                             ? imgUrl.GetString() ?? ""
                             : bgImg.GetString() ?? "";
                     }
 
-                    if (firstBg.TryGetProperty("video", out var videoObj))
+                    if (firstBg.TryGetProperty("video", out var videoObj) && videoObj.ValueKind != JsonValueKind.Null)
                     {
-                        var videoUrl = videoObj.TryGetProperty("url", out var vUrl)
+                        var videoUrl = videoObj.ValueKind == JsonValueKind.Object && videoObj.TryGetProperty("url", out var vUrl)
                             ? vUrl.GetString()
                             : videoObj.GetString();
 
@@ -262,15 +264,16 @@ public class BackgroundService : IDisposable
             }
 
             // Format 4: game_content -> backgrounds (ZZZ style)
-            if (data.TryGetProperty("game_content", out var gameContent))
+            if (data.TryGetProperty("game_content", out var gameContent) && gameContent.ValueKind == JsonValueKind.Object)
             {
-                if (gameContent.TryGetProperty("backgrounds", out var gcBgs) && gcBgs.GetArrayLength() > 0)
+                if (gameContent.TryGetProperty("backgrounds", out var gcBgs) && 
+                    gcBgs.ValueKind == JsonValueKind.Array && gcBgs.GetArrayLength() > 0)
                 {
                     var firstBg = gcBgs[0];
 
-                    if (firstBg.TryGetProperty("background", out var bgData))
+                    if (firstBg.TryGetProperty("background", out var bgData) && bgData.ValueKind != JsonValueKind.Null)
                     {
-                        backgroundInfo.Url = bgData.TryGetProperty("url", out var bUrl)
+                        backgroundInfo.Url = bgData.ValueKind == JsonValueKind.Object && bgData.TryGetProperty("url", out var bUrl)
                             ? bUrl.GetString() ?? ""
                             : "";
                     }
@@ -279,9 +282,9 @@ public class BackgroundService : IDisposable
                         backgroundInfo.Url = directUrl.GetString() ?? "";
                     }
 
-                    if (firstBg.TryGetProperty("video", out var videoData))
+                    if (firstBg.TryGetProperty("video", out var videoData) && videoData.ValueKind != JsonValueKind.Null)
                     {
-                        var videoUrl = videoData.TryGetProperty("url", out var vdUrl)
+                        var videoUrl = videoData.ValueKind == JsonValueKind.Object && videoData.TryGetProperty("url", out var vdUrl)
                             ? vdUrl.GetString()
                             : "";
 
@@ -295,7 +298,7 @@ public class BackgroundService : IDisposable
             }
 
             // Format 5: icon (fallback to game icon as background if no bg found)
-            if (string.IsNullOrEmpty(backgroundInfo.Url) && data.TryGetProperty("icon", out var icon))
+            if (string.IsNullOrEmpty(backgroundInfo.Url) && data.TryGetProperty("icon", out var icon) && icon.ValueKind == JsonValueKind.String)
             {
                 backgroundInfo.Url = icon.GetString() ?? "";
                 backgroundInfo.Type = BackgroundType.Image;
