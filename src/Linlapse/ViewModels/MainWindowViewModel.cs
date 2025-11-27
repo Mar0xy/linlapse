@@ -19,6 +19,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly UpdateService _updateService;
     private readonly GameSettingsService _gameSettingsService;
     private readonly GameDownloadService _gameDownloadService;
+    private readonly BackgroundService _backgroundService;
 
     private CancellationTokenSource? _downloadCts;
 
@@ -61,6 +62,15 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _downloadSizeText = string.Empty;
 
+    [ObservableProperty]
+    private string? _backgroundSource;
+
+    [ObservableProperty]
+    private bool _isVideoBackground;
+
+    [ObservableProperty]
+    private string _backgroundColor = "#1a1a2e";
+
     public ObservableCollection<GameInfo> Games { get; } = new();
 
     public string AppVersion => "1.0.0";
@@ -78,6 +88,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _gameSettingsService = new GameSettingsService(_gameService);
         _launcherService = new GameLauncherService(_settingsService, _gameService);
         _gameDownloadService = new GameDownloadService(_gameService, _downloadService, _installationService, _settingsService);
+        _backgroundService = new BackgroundService(_gameService, _settingsService);
 
         // Subscribe to events
         _gameService.GamesListChanged += (_, _) => RefreshGamesCollection();
@@ -570,6 +581,9 @@ public partial class MainWindowViewModel : ViewModelBase
             DownloadInfo = null;
             DownloadSizeText = string.Empty;
             
+            // Load background for the selected game
+            _ = LoadBackgroundAsync(value.Id);
+            
             if (value.IsInstalled)
             {
                 // Load cache info in background
@@ -583,6 +597,51 @@ public partial class MainWindowViewModel : ViewModelBase
                 // Get download info for non-installed games
                 _ = GetDownloadInfoAsync();
             }
+        }
+    }
+
+    private async Task LoadBackgroundAsync(string gameId)
+    {
+        try
+        {
+            var backgroundInfo = await _backgroundService.GetBackgroundInfoAsync(gameId);
+            
+            if (backgroundInfo != null)
+            {
+                if (backgroundInfo.Type == BackgroundType.Color && !string.IsNullOrEmpty(backgroundInfo.Color))
+                {
+                    // Just use color background
+                    BackgroundSource = null;
+                    IsVideoBackground = false;
+                    BackgroundColor = backgroundInfo.Color;
+                }
+                else
+                {
+                    // Download and cache the background
+                    var cachedPath = await _backgroundService.GetCachedBackgroundAsync(gameId);
+                    
+                    if (!string.IsNullOrEmpty(cachedPath))
+                    {
+                        BackgroundSource = cachedPath;
+                        IsVideoBackground = backgroundInfo.Type == BackgroundType.Video;
+                        Log.Debug("Set background for {GameId}: {Path} (Video: {IsVideo})", 
+                            gameId, cachedPath, IsVideoBackground);
+                    }
+                    else if (!string.IsNullOrEmpty(backgroundInfo.Url))
+                    {
+                        // Use URL directly if caching failed
+                        BackgroundSource = backgroundInfo.Url;
+                        IsVideoBackground = backgroundInfo.Type == BackgroundType.Video;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to load background for {GameId}", gameId);
+            // Keep default background
+            BackgroundSource = null;
+            IsVideoBackground = false;
         }
     }
 }

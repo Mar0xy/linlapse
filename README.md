@@ -54,6 +54,8 @@
 
 ### User Interface
 - 🎨 **Modern UI**: Dark-themed, modern interface inspired by Collapse Launcher
+- 🖼️ **Dynamic Backgrounds**: Game-specific background images fetched from official APIs
+- 🎬 **Video Background Support**: Framework ready for video backgrounds (requires LibVLC)
 - 📝 **Status Updates**: Real-time progress and status information
 - 📊 **Progress Tracking**: Visual progress bars for downloads and operations
 
