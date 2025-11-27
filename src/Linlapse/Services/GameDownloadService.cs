@@ -127,33 +127,77 @@ public class GameDownloadService : IDisposable
             progress?.Report(downloadProgress);
             DownloadProgressChanged?.Invoke(this, downloadProgress);
 
-            var downloadTasks = new List<Task<bool>>();
             var downloadedFiles = new List<string>();
+            long totalDownloaded = 0;
 
-            // Download main game package
-            var mainPackagePath = Path.Combine(tempDir, $"game_package{Path.GetExtension(downloadInfo.DownloadUrl)}");
+            // Download all package segments (supports split downloads)
+            var segments = downloadInfo.PackageSegments.Count > 0 
+                ? downloadInfo.PackageSegments 
+                : new List<GamePackageSegment> 
+                { 
+                    new() 
+                    { 
+                        DownloadUrl = downloadInfo.DownloadUrl, 
+                        Size = downloadInfo.TotalSize, 
+                        Md5 = downloadInfo.PackageMd5,
+                        PartNumber = 1 
+                    } 
+                };
 
-            var fileProgress = new Progress<DownloadProgress>(dp =>
+            downloadProgress.TotalFiles = segments.Count;
+            Log.Information("Downloading {Count} package segment(s) for {GameId}", segments.Count, gameId);
+
+            for (int i = 0; i < segments.Count; i++)
             {
-                downloadProgress.DownloadedBytes = dp.BytesDownloaded;
-                downloadProgress.SpeedBytesPerSecond = dp.SpeedBytesPerSecond;
-                downloadProgress.EstimatedTimeRemaining = dp.EstimatedTimeRemaining;
-                progress?.Report(downloadProgress);
-                DownloadProgressChanged?.Invoke(this, downloadProgress);
-            });
+                var segment = segments[i];
+                downloadProgress.CurrentFile = $"Part {i + 1} of {segments.Count}";
+                
+                var extension = Path.GetExtension(new Uri(segment.DownloadUrl).AbsolutePath);
+                if (string.IsNullOrEmpty(extension)) extension = ".zip";
+                
+                var segmentPath = Path.Combine(tempDir, $"game_package_part{segment.PartNumber}{extension}");
 
-            var mainDownloadSuccess = await _downloadService.DownloadFileAsync(
-                downloadInfo.DownloadUrl,
-                mainPackagePath,
-                fileProgress,
-                cancellationToken);
+                var segmentProgress = new Progress<DownloadProgress>(dp =>
+                {
+                    downloadProgress.DownloadedBytes = totalDownloaded + dp.BytesDownloaded;
+                    downloadProgress.SpeedBytesPerSecond = dp.SpeedBytesPerSecond;
+                    downloadProgress.EstimatedTimeRemaining = dp.EstimatedTimeRemaining;
+                    progress?.Report(downloadProgress);
+                    DownloadProgressChanged?.Invoke(this, downloadProgress);
+                });
 
-            if (!mainDownloadSuccess)
-            {
-                throw new Exception("Failed to download game package");
+                Log.Information("Downloading segment {Part}/{Total}: {Url}", 
+                    segment.PartNumber, segments.Count, segment.DownloadUrl);
+
+                var segmentSuccess = await _downloadService.DownloadFileAsync(
+                    segment.DownloadUrl,
+                    segmentPath,
+                    segmentProgress,
+                    cancellationToken);
+
+                if (!segmentSuccess)
+                {
+                    throw new Exception($"Failed to download game package segment {segment.PartNumber}");
+                }
+
+                // Verify segment if MD5 is available
+                if (!string.IsNullOrEmpty(segment.Md5))
+                {
+                    var isValid = await _downloadService.VerifyFileHashAsync(
+                        segmentPath,
+                        segment.Md5,
+                        System.Security.Cryptography.HashAlgorithmName.MD5);
+
+                    if (!isValid)
+                    {
+                        throw new Exception($"Downloaded segment {segment.PartNumber} verification failed - file may be corrupted");
+                    }
+                    Log.Debug("Segment {Part} MD5 verified successfully", segment.PartNumber);
+                }
+
+                downloadedFiles.Add(segmentPath);
+                totalDownloaded += segment.Size;
             }
-
-            downloadedFiles.Add(mainPackagePath);
 
             // Download voice packs if available and selected
             if (downloadInfo.VoicePacks.Count > 0)
@@ -186,22 +230,9 @@ public class GameDownloadService : IDisposable
                 }
             }
 
-            // Verify downloads
+            // Verification already done per-segment above
             downloadProgress.State = GameDownloadState.Verifying;
             progress?.Report(downloadProgress);
-
-            if (!string.IsNullOrEmpty(downloadInfo.PackageMd5))
-            {
-                var isValid = await _downloadService.VerifyFileHashAsync(
-                    mainPackagePath,
-                    downloadInfo.PackageMd5,
-                    System.Security.Cryptography.HashAlgorithmName.MD5);
-
-                if (!isValid)
-                {
-                    throw new Exception("Downloaded file verification failed - file may be corrupted");
-                }
-            }
 
             // Extract/Install
             downloadProgress.State = GameDownloadState.Extracting;
@@ -471,13 +502,33 @@ public class GameDownloadService : IDisposable
 
                                 if (major.TryGetProperty("game_pkgs", out var gamePkgs))
                                 {
-                                    var firstPkg = gamePkgs.EnumerateArray().FirstOrDefault();
-                                    if (firstPkg.ValueKind != JsonValueKind.Undefined)
+                                    int partNumber = 1;
+                                    long totalSize = 0;
+                                    
+                                    foreach (var pkg in gamePkgs.EnumerateArray())
                                     {
-                                        downloadInfo.DownloadUrl = firstPkg.TryGetProperty("url", out var url) ? url.GetString() ?? "" : "";
-                                        downloadInfo.TotalSize = firstPkg.TryGetProperty("size", out var sz) ? GetInt64FromElement(sz) : 0;
-                                        downloadInfo.PackageMd5 = firstPkg.TryGetProperty("md5", out var m) ? m.GetString() : null;
+                                        var segment = new GamePackageSegment
+                                        {
+                                            DownloadUrl = pkg.TryGetProperty("url", out var url) ? url.GetString() ?? "" : "",
+                                            Size = pkg.TryGetProperty("size", out var sz) ? GetInt64FromElement(sz) : 0,
+                                            Md5 = pkg.TryGetProperty("md5", out var m) ? m.GetString() : null,
+                                            PartNumber = partNumber++
+                                        };
+                                        downloadInfo.PackageSegments.Add(segment);
+                                        totalSize += segment.Size;
                                     }
+                                    
+                                    downloadInfo.TotalSize = totalSize;
+                                    
+                                    // Set first segment as primary download URL for backwards compatibility
+                                    if (downloadInfo.PackageSegments.Count > 0)
+                                    {
+                                        downloadInfo.DownloadUrl = downloadInfo.PackageSegments[0].DownloadUrl;
+                                        downloadInfo.PackageMd5 = downloadInfo.PackageSegments[0].Md5;
+                                    }
+                                    
+                                    Log.Debug("Found {Count} package segments for {GameBiz}, total size: {Size} bytes", 
+                                        downloadInfo.PackageSegments.Count, gameBiz, totalSize);
                                 }
 
                                 // Voice packs
@@ -496,8 +547,8 @@ public class GameDownloadService : IDisposable
                                     }
                                 }
                                 
-                                Log.Debug("Parsed download info for {GameBiz}: Version={Version}, URL={Url}", 
-                                    gameBiz, downloadInfo.Version, downloadInfo.DownloadUrl);
+                                Log.Debug("Parsed download info for {GameBiz}: Version={Version}, Segments={SegmentCount}", 
+                                    gameBiz, downloadInfo.Version, downloadInfo.PackageSegments.Count);
                             }
                         }
                         break; // Found our game
@@ -551,7 +602,19 @@ public class GameDownloadInfo
     public long TotalSize { get; set; }
     public long PackageSize { get; set; }
     public string? PackageMd5 { get; set; }
+    public List<GamePackageSegment> PackageSegments { get; set; } = new();
     public List<VoicePackDownloadInfo> VoicePacks { get; set; } = new();
+}
+
+/// <summary>
+/// A single segment/part of a game package download
+/// </summary>
+public class GamePackageSegment
+{
+    public string DownloadUrl { get; set; } = string.Empty;
+    public long Size { get; set; }
+    public string? Md5 { get; set; }
+    public int PartNumber { get; set; }
 }
 
 /// <summary>
