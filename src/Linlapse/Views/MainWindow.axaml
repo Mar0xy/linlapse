@@ -135,6 +135,10 @@
 
                 <!-- Bottom Actions -->
                 <StackPanel Grid.Row="2" Spacing="8">
+                    <Button Content="⚙ Settings" 
+                            Classes="secondary"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding ToggleSettingsCommand}"/>
                     <Button Content="⟳ Refresh Games" 
                             Classes="secondary"
                             HorizontalAlignment="Stretch"
@@ -413,6 +417,182 @@
                                    Margin="0,16,0,0"/>
                     </StackPanel>
                 </Grid>
+            </Border>
+
+            <!-- Settings Panel (overlay) -->
+            <Border Grid.Row="0"
+                    IsVisible="{Binding IsSettingsVisible}"
+                    Background="#1a1a2e"
+                    Margin="24"
+                    CornerRadius="16"
+                    Padding="32">
+                <ScrollViewer>
+                    <StackPanel Spacing="24">
+                        <!-- Settings Header -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="⚙ Settings" 
+                                       FontSize="28" 
+                                       FontWeight="Bold" 
+                                       Foreground="White"/>
+                            <Button Grid.Column="1" 
+                                    Content="✕ Close" 
+                                    Classes="secondary"
+                                    Command="{Binding ToggleSettingsCommand}"/>
+                        </Grid>
+
+                        <!-- Wine/Proton Configuration -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Wine/Proton Configuration" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                
+                                <StackPanel Spacing="8">
+                                    <CheckBox IsChecked="{Binding UseSystemWine}"
+                                              Foreground="White">
+                                        <TextBlock Text="Use system Wine" Foreground="White"/>
+                                    </CheckBox>
+                                    
+                                    <TextBlock Text="Custom Wine executable path:" 
+                                               Foreground="#a1a1aa" 
+                                               FontSize="12"
+                                               Margin="0,8,0,0"/>
+                                    <TextBox Text="{Binding WineExecutablePath}"
+                                             Watermark="/usr/bin/wine or custom path"
+                                             Background="#3f3f46"
+                                             Foreground="White"
+                                             BorderBrush="#52525b"
+                                             Padding="12,8"/>
+                                    
+                                    <TextBlock Text="Wine prefix path:" 
+                                               Foreground="#a1a1aa" 
+                                               FontSize="12"
+                                               Margin="0,8,0,0"/>
+                                    <TextBox Text="{Binding WinePrefixPath}"
+                                             Watermark="~/.local/share/linlapse/wine-prefix"
+                                             Background="#3f3f46"
+                                             Foreground="White"
+                                             BorderBrush="#52525b"
+                                             Padding="12,8"/>
+                                    
+                                    <CheckBox IsChecked="{Binding UseProton}"
+                                              Foreground="White"
+                                              Margin="0,8,0,0">
+                                        <TextBlock Text="Use Proton instead of Wine" Foreground="White"/>
+                                    </CheckBox>
+                                    
+                                    <TextBlock Text="Proton path (e.g., Steam's Proton):" 
+                                               Foreground="#a1a1aa" 
+                                               FontSize="12"
+                                               Margin="0,8,0,0"/>
+                                    <TextBox Text="{Binding ProtonPath}"
+                                             Watermark="~/.steam/steam/steamapps/common/Proton 9.0/proton"
+                                             Background="#3f3f46"
+                                             Foreground="White"
+                                             BorderBrush="#52525b"
+                                             Padding="12,8"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Voice Pack Selection -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Voice Pack Selection" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                <TextBlock Text="Select which voice packs to download with games:" 
+                                           Foreground="#a1a1aa" 
+                                           FontSize="12"/>
+                                
+                                <StackPanel Spacing="8">
+                                    <CheckBox Foreground="White"
+                                              IsChecked="{Binding VoiceLanguageOptions[0].IsSelected}">
+                                        <TextBlock Text="English (en-us)" Foreground="White"/>
+                                    </CheckBox>
+                                    <CheckBox Foreground="White"
+                                              IsChecked="{Binding VoiceLanguageOptions[1].IsSelected}">
+                                        <TextBlock Text="Japanese (ja-jp)" Foreground="White"/>
+                                    </CheckBox>
+                                    <CheckBox Foreground="White"
+                                              IsChecked="{Binding VoiceLanguageOptions[2].IsSelected}">
+                                        <TextBlock Text="Chinese Simplified (zh-cn)" Foreground="White"/>
+                                    </CheckBox>
+                                    <CheckBox Foreground="White"
+                                              IsChecked="{Binding VoiceLanguageOptions[3].IsSelected}">
+                                        <TextBlock Text="Korean (ko-kr)" Foreground="White"/>
+                                    </CheckBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Download Settings -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Download Settings" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Default game install path:" 
+                                               Foreground="#a1a1aa" 
+                                               FontSize="12"/>
+                                    <TextBox Text="{Binding DefaultGameInstallPath}"
+                                             Watermark="~/Games"
+                                             Background="#3f3f46"
+                                             Foreground="White"
+                                             BorderBrush="#52525b"
+                                             Padding="12,8"/>
+                                    
+                                    <TextBlock Text="Max concurrent downloads:" 
+                                               Foreground="#a1a1aa" 
+                                               FontSize="12"
+                                               Margin="0,8,0,0"/>
+                                    <NumericUpDown Value="{Binding MaxConcurrentDownloads}"
+                                                   Minimum="1"
+                                                   Maximum="16"
+                                                   Background="#3f3f46"
+                                                   Foreground="White"
+                                                   BorderBrush="#52525b"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- General Settings -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="General" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                
+                                <StackPanel Spacing="8">
+                                    <CheckBox IsChecked="{Binding CheckUpdatesOnStartup}"
+                                              Foreground="White">
+                                        <TextBlock Text="Check for updates on startup" Foreground="White"/>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding EnableLogging}"
+                                              Foreground="White">
+                                        <TextBlock Text="Enable logging" Foreground="White"/>
+                                    </CheckBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Save/Reset Buttons -->
+                        <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+                            <Button Content="Reset to Defaults" 
+                                    Classes="secondary"
+                                    Command="{Binding ResetSettingsCommand}"/>
+                            <Button Content="Save Settings" 
+                                    Classes="primary"
+                                    Command="{Binding SaveSettingsCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
 
             <!-- Status Bar -->

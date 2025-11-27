@@ -71,6 +71,46 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _backgroundColor = "#1a1a2e";
 
+    [ObservableProperty]
+    private bool _isSettingsVisible;
+
+    // Settings properties (delegated from SettingsViewModel)
+    [ObservableProperty]
+    private bool _useSystemWine;
+
+    [ObservableProperty]
+    private string? _wineExecutablePath;
+
+    [ObservableProperty]
+    private string? _winePrefixPath;
+
+    [ObservableProperty]
+    private bool _useProton;
+
+    [ObservableProperty]
+    private string? _protonPath;
+
+    [ObservableProperty]
+    private string? _defaultGameInstallPath;
+
+    [ObservableProperty]
+    private int _maxConcurrentDownloads = 4;
+
+    [ObservableProperty]
+    private bool _checkUpdatesOnStartup = true;
+
+    [ObservableProperty]
+    private bool _enableLogging = true;
+
+    // Voice language options for settings
+    public ObservableCollection<VoiceLanguageOption> VoiceLanguageOptions { get; } = new()
+    {
+        new VoiceLanguageOption { Code = "en-us", DisplayName = "English", IsSelected = true },
+        new VoiceLanguageOption { Code = "ja-jp", DisplayName = "Japanese" },
+        new VoiceLanguageOption { Code = "zh-cn", DisplayName = "Chinese (Simplified)" },
+        new VoiceLanguageOption { Code = "ko-kr", DisplayName = "Korean" }
+    };
+
     public ObservableCollection<GameInfo> Games { get; } = new();
 
     public string AppVersion => "1.0.0";
@@ -643,5 +683,84 @@ public partial class MainWindowViewModel : ViewModelBase
             BackgroundSource = null;
             IsVideoBackground = false;
         }
+    }
+
+    [RelayCommand]
+    private void ToggleSettings()
+    {
+        if (!IsSettingsVisible)
+        {
+            // Load current settings when opening
+            LoadSettingsFromService();
+        }
+        IsSettingsVisible = !IsSettingsVisible;
+    }
+
+    private void LoadSettingsFromService()
+    {
+        var settings = _settingsService.Settings;
+        UseSystemWine = settings.UseSystemWine;
+        WineExecutablePath = settings.WineExecutablePath;
+        WinePrefixPath = settings.WinePrefixPath;
+        UseProton = settings.UseProton;
+        ProtonPath = settings.ProtonPath;
+        DefaultGameInstallPath = settings.DefaultGameInstallPath;
+        MaxConcurrentDownloads = settings.MaxConcurrentDownloads;
+        CheckUpdatesOnStartup = settings.CheckUpdatesOnStartup;
+        EnableLogging = settings.EnableLogging;
+
+        // Load voice language selections
+        foreach (var option in VoiceLanguageOptions)
+        {
+            option.IsSelected = settings.SelectedVoiceLanguages.Contains(option.Code);
+        }
+    }
+
+    [RelayCommand]
+    private void SaveSettings()
+    {
+        _settingsService.UpdateSettings(settings =>
+        {
+            settings.UseSystemWine = UseSystemWine;
+            settings.WineExecutablePath = WineExecutablePath;
+            settings.WinePrefixPath = WinePrefixPath;
+            settings.UseProton = UseProton;
+            settings.ProtonPath = ProtonPath;
+            settings.DefaultGameInstallPath = DefaultGameInstallPath;
+            settings.MaxConcurrentDownloads = MaxConcurrentDownloads;
+            settings.CheckUpdatesOnStartup = CheckUpdatesOnStartup;
+            settings.EnableLogging = EnableLogging;
+            settings.SelectedVoiceLanguages = VoiceLanguageOptions
+                .Where(v => v.IsSelected)
+                .Select(v => v.Code)
+                .ToList();
+        });
+
+        StatusMessage = "Settings saved successfully";
+        Log.Information("Settings saved");
+    }
+
+    [RelayCommand]
+    private void ResetSettings()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        
+        _settingsService.UpdateSettings(settings =>
+        {
+            settings.DefaultGameInstallPath = Path.Combine(home, "Games");
+            settings.WinePrefixPath = Path.Combine(home, ".local", "share", "linlapse", "wine-prefix");
+            settings.WineExecutablePath = null;
+            settings.ProtonPath = null;
+            settings.UseSystemWine = true;
+            settings.UseProton = false;
+            settings.SelectedVoiceLanguages = new List<string> { "en-us" };
+            settings.MaxConcurrentDownloads = 4;
+            settings.CheckUpdatesOnStartup = true;
+            settings.EnableLogging = true;
+        });
+
+        LoadSettingsFromService();
+        StatusMessage = "Settings reset to defaults";
+        Log.Information("Settings reset to defaults");
     }
 }

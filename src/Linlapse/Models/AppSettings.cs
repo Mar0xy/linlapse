@@ -10,7 +10,11 @@ public class AppSettings
     public string? DefaultGameInstallPath { get; set; }
     public string? WinePrefixPath { get; set; }
     public string? WineExecutablePath { get; set; }
+    public string? ProtonPath { get; set; }
     public bool UseSystemWine { get; set; } = true;
+    public bool UseProton { get; set; } = false;
+    public string PreferredVoiceLanguage { get; set; } = "en-us";
+    public List<string> SelectedVoiceLanguages { get; set; } = new() { "en-us" };
     public bool EnableDiscordRpc { get; set; } = true;
     public bool MinimizeToTray { get; set; } = true;
     public bool StartMinimized { get; set; } = false;

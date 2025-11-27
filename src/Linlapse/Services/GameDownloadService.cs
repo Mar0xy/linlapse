@@ -199,33 +199,53 @@ public class GameDownloadService : IDisposable
                 totalDownloaded += segment.Size;
             }
 
-            // Download voice packs if available and selected
+            // Download voice packs based on user's selected languages from settings
             if (downloadInfo.VoicePacks.Count > 0)
             {
                 downloadProgress.State = GameDownloadState.DownloadingVoicePacks;
                 progress?.Report(downloadProgress);
 
-                // Default to English voice pack
-                var selectedVoicePack = downloadInfo.VoicePacks.FirstOrDefault(v =>
-                    v.Language.Contains("en", StringComparison.OrdinalIgnoreCase) ||
-                    v.Language.Contains("English", StringComparison.OrdinalIgnoreCase));
-
-                if (selectedVoicePack != null && !string.IsNullOrEmpty(selectedVoicePack.DownloadUrl))
+                // Get selected voice languages from settings
+                var selectedLanguages = _settingsService.Settings.SelectedVoiceLanguages;
+                if (selectedLanguages.Count == 0)
                 {
-                    var voicePackPath = Path.Combine(tempDir, $"voice_{selectedVoicePack.Language}{Path.GetExtension(selectedVoicePack.DownloadUrl)}");
+                    selectedLanguages = new List<string> { "en-us" }; // Default to English
+                }
 
-                    var voiceDownloadSuccess = await _downloadService.DownloadFileAsync(
-                        selectedVoicePack.DownloadUrl,
-                        voicePackPath,
-                        cancellationToken: cancellationToken);
+                foreach (var selectedLang in selectedLanguages)
+                {
+                    // Find matching voice pack (case-insensitive, partial match)
+                    var voicePack = downloadInfo.VoicePacks.FirstOrDefault(v =>
+                        v.Language.Contains(selectedLang.Replace("-", ""), StringComparison.OrdinalIgnoreCase) ||
+                        v.Language.Replace("-", "").Contains(selectedLang.Replace("-", ""), StringComparison.OrdinalIgnoreCase) ||
+                        selectedLang.Replace("-", "").Contains(v.Language.Replace("-", ""), StringComparison.OrdinalIgnoreCase));
 
-                    if (voiceDownloadSuccess)
+                    if (voicePack != null && !string.IsNullOrEmpty(voicePack.DownloadUrl))
                     {
-                        downloadedFiles.Add(voicePackPath);
+                        Log.Information("Downloading voice pack: {Language}", voicePack.Language);
+                        downloadProgress.CurrentFile = $"Voice: {voicePack.Language}";
+                        progress?.Report(downloadProgress);
+
+                        var voicePackPath = Path.Combine(tempDir, $"voice_{voicePack.Language}{Path.GetExtension(voicePack.DownloadUrl)}");
+
+                        var voiceDownloadSuccess = await _downloadService.DownloadFileAsync(
+                            voicePack.DownloadUrl,
+                            voicePackPath,
+                            cancellationToken: cancellationToken);
+
+                        if (voiceDownloadSuccess)
+                        {
+                            downloadedFiles.Add(voicePackPath);
+                            Log.Information("Voice pack downloaded: {Language}", voicePack.Language);
+                        }
+                        else
+                        {
+                            Log.Warning("Failed to download voice pack for {Language}", voicePack.Language);
+                        }
                     }
                     else
                     {
-                        Log.Warning("Failed to download voice pack for {Language}", selectedVoicePack.Language);
+                        Log.Debug("No voice pack found for language: {Language}", selectedLang);
                     }
                 }
             }
