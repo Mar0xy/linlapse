@@ -181,12 +181,27 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void RefreshGamesCollection()
     {
+        // Remember the currently selected game ID
+        var selectedGameId = SelectedGame?.Id;
+
         Games.Clear();
         foreach (var game in _gameService.Games)
         {
             Games.Add(game);
         }
 
+        // Restore selection by finding the game with the same ID
+        if (!string.IsNullOrEmpty(selectedGameId))
+        {
+            var gameToSelect = Games.FirstOrDefault(g => g.Id == selectedGameId);
+            if (gameToSelect != null)
+            {
+                SelectedGame = gameToSelect;
+                return;
+            }
+        }
+
+        // If no previous selection or game not found, select first game
         if (SelectedGame == null && Games.Count > 0)
         {
             SelectedGame = Games[0];
@@ -199,9 +214,12 @@ public partial class MainWindowViewModel : ViewModelBase
         if (existingGame != null)
         {
             var index = Games.IndexOf(existingGame);
+            var wasSelected = SelectedGame?.Id == updatedGame.Id;
+            
             Games[index] = updatedGame;
 
-            if (SelectedGame?.Id == updatedGame.Id)
+            // Restore selection if this was the selected game
+            if (wasSelected)
             {
                 SelectedGame = updatedGame;
             }
