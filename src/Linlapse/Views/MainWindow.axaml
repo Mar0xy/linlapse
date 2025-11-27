@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Linlapse.ViewModels"
         xmlns:models="using:Linlapse.Models"
+        xmlns:services="using:Linlapse.Services"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
@@ -29,6 +30,10 @@
         <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="#818cf8"/>
         </Style>
+        <Style Selector="Button.primary:disabled /template/ ContentPresenter">
+            <Setter Property="Background" Value="#4b4b6b"/>
+            <Setter Property="Foreground" Value="#71717a"/>
+        </Style>
         <Style Selector="Button.secondary">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="#a1a1aa"/>
@@ -39,6 +44,15 @@
         </Style>
         <Style Selector="Button.secondary:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="#27272a"/>
+        </Style>
+        <Style Selector="Button.danger">
+            <Setter Property="Background" Value="#dc2626"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="CornerRadius" Value="6"/>
+        </Style>
+        <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#ef4444"/>
         </Style>
         <Style Selector="ListBoxItem">
             <Setter Property="Padding" Value="16,12"/>
@@ -156,6 +170,7 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
                         <!-- Game Info -->
@@ -186,6 +201,45 @@
                                 </Border>
                             </StackPanel>
                             
+                            <!-- Update Available Banner -->
+                            <Border Background="#854d0e" 
+                                    CornerRadius="8" 
+                                    Padding="16,12"
+                                    Margin="0,16,0,0"
+                                    IsVisible="{Binding AvailableUpdate.HasUpdate, FallbackValue=False}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Update Available!" FontWeight="SemiBold" Foreground="#fef08a"/>
+                                        <TextBlock Foreground="#fde047" FontSize="12">
+                                            <Run Text="New version: "/>
+                                            <Run Text="{Binding AvailableUpdate.LatestVersion}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" 
+                                            Content="Update Now" 
+                                            Classes="primary"
+                                            Command="{Binding ApplyUpdateCommand}"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Cache Info -->
+                            <Border Background="#27272a" 
+                                    CornerRadius="8" 
+                                    Padding="16,12"
+                                    Margin="0,16,0,0"
+                                    IsVisible="{Binding CacheInfo, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel>
+                                    <TextBlock Text="Cache Information" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+                                    <TextBlock Foreground="#71717a" FontSize="12">
+                                        <Run Text="Total cache size: "/>
+                                        <Run Text="{Binding CacheInfo.TotalSize, StringFormat='{}{0:N0} bytes'}" Foreground="#a1a1aa"/>
+                                        <Run Text=" ("/>
+                                        <Run Text="{Binding CacheInfo.TotalFiles}" Foreground="#a1a1aa"/>
+                                        <Run Text=" files)"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                            
                             <TextBlock Text="{Binding SelectedGame.InstallPath}"
                                        IsVisible="{Binding SelectedGame.IsInstalled}"
                                        Foreground="#52525b"
@@ -193,11 +247,29 @@
                                        Margin="0,16,0,0"/>
                         </StackPanel>
 
-                        <!-- Action Buttons -->
+                        <!-- Progress Bar -->
                         <StackPanel Grid.Row="1" 
+                                    Margin="0,16,0,0"
+                                    IsVisible="{Binding IsDownloading}">
+                            <ProgressBar Value="{Binding ProgressPercent}"
+                                         Maximum="100"
+                                         Height="8"
+                                         CornerRadius="4"
+                                         Background="#3f3f46"
+                                         Foreground="#6366f1"/>
+                            <TextBlock Text="{Binding ProgressText}"
+                                       Foreground="#a1a1aa"
+                                       FontSize="12"
+                                       Margin="0,8,0,0"/>
+                        </StackPanel>
+
+                        <!-- Action Buttons -->
+                        <StackPanel Grid.Row="2" 
                                     Orientation="Horizontal" 
                                     Spacing="12"
+                                    Margin="0,16,0,0"
                                     HorizontalAlignment="Left">
+                            <!-- Launch Button -->
                             <Button Classes="primary"
                                     Command="{Binding LaunchGameCommand}"
                                     IsEnabled="{Binding SelectedGame.IsInstalled}">
@@ -206,7 +278,9 @@
                                     <TextBlock Text="Launch Game"/>
                                 </StackPanel>
                             </Button>
-                            <Button Classes="secondary"
+                            
+                            <!-- Stop Button -->
+                            <Button Classes="danger"
                                     IsVisible="{Binding IsGameRunning}"
                                     Command="{Binding StopGameCommand}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -214,25 +288,45 @@
                                     <TextBlock Text="Stop Game"/>
                                 </StackPanel>
                             </Button>
+                            
+                            <!-- Repair Button -->
                             <Button Classes="secondary"
-                                    IsVisible="{Binding !SelectedGame.IsInstalled}">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBlock Text="📥"/>
-                                    <TextBlock Text="Install Game"/>
-                                </StackPanel>
-                            </Button>
-                            <Button Classes="secondary"
-                                    IsVisible="{Binding SelectedGame.IsInstalled}">
+                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    Command="{Binding RepairGameCommand}"
+                                    IsEnabled="{Binding !IsRepairing}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="🔧"/>
-                                    <TextBlock Text="Repair"/>
+                                    <TextBlock Text="Verify Files"/>
                                 </StackPanel>
                             </Button>
+                            
+                            <!-- Clear Cache Button -->
                             <Button Classes="secondary"
-                                    IsVisible="{Binding SelectedGame.IsInstalled}">
+                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    Command="{Binding ClearCacheCommand}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBlock Text="⚙"/>
-                                    <TextBlock Text="Settings"/>
+                                    <TextBlock Text="🗑"/>
+                                    <TextBlock Text="Clear Cache"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <!-- Check Updates Button -->
+                            <Button Classes="secondary"
+                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    Command="{Binding CheckForUpdatesCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="🔄"/>
+                                    <TextBlock Text="Check Updates"/>
+                                </StackPanel>
+                            </Button>
+
+                            <!-- Preload Button -->
+                            <Button Classes="secondary"
+                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    Command="{Binding DownloadPreloadCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="📥"/>
+                                    <TextBlock Text="Preload"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>

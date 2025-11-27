@@ -200,7 +200,7 @@ public class GameLauncherService
             {
                 if (!process.HasExited)
                 {
-                    process.Kill(entireProcessTree: true);
+                    process.Kill();
                     Log.Information("Game forcefully stopped: {GameId}", gameId);
                 }
             }
