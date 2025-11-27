@@ -434,7 +434,7 @@ public class UpdateService : IDisposable
                         }
                         if (latest.TryGetProperty("size", out var size))
                         {
-                            updateInfo.DownloadSize = size.GetInt64();
+                            updateInfo.DownloadSize = GetInt64FromElement(size);
                         }
                     }
 
@@ -448,7 +448,7 @@ public class UpdateService : IDisposable
                                 updateInfo.DeltaPatchUrl = diff.GetProperty("path").GetString();
                                 if (diff.TryGetProperty("size", out var diffSize))
                                 {
-                                    updateInfo.DeltaSize = diffSize.GetInt64();
+                                    updateInfo.DeltaSize = GetInt64FromElement(diffSize);
                                 }
                                 break;
                             }
@@ -497,6 +497,26 @@ public class UpdateService : IDisposable
     public void Dispose()
     {
         _httpClient.Dispose();
+    }
+
+    /// <summary>
+    /// Helper method to get Int64 from a JsonElement that might be a string or number
+    /// </summary>
+    private static long GetInt64FromElement(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Number)
+        {
+            return element.GetInt64();
+        }
+        else if (element.ValueKind == JsonValueKind.String)
+        {
+            var str = element.GetString();
+            if (long.TryParse(str, out var value))
+            {
+                return value;
+            }
+        }
+        return 0;
     }
 }
 

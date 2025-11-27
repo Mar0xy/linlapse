@@ -166,7 +166,7 @@
                         x:Name="BackgroundPlayer"
                         Source="{Binding BackgroundSource}"
                         IsVideo="{Binding IsVideoBackground}"
-                        OverlayOpacity="0.5"
+                        OverlayOpacity="0.6"
                         MuteAudio="True"/>
                     
                     <!-- Fallback Gradient (shown when no background) -->
@@ -179,6 +179,10 @@
                             </LinearGradientBrush>
                         </Border.Background>
                     </Border>
+                    
+                    <!-- Semi-transparent overlay for better text readability -->
+                    <Border Background="#1a1a2e" Opacity="0.7"
+                            IsVisible="{Binding BackgroundSource, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     
                     <!-- Content when game is selected -->
                     <Grid IsVisible="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNotNull}}"

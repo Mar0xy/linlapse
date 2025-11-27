@@ -33,7 +33,7 @@ public class BackgroundPlayer : UserControl, IDisposable
         AvaloniaProperty.Register<BackgroundPlayer, bool>(nameof(IsVideo));
 
     public static readonly StyledProperty<double> OverlayOpacityProperty =
-        AvaloniaProperty.Register<BackgroundPlayer, double>(nameof(OverlayOpacity), 0.4);
+        AvaloniaProperty.Register<BackgroundPlayer, double>(nameof(OverlayOpacity), 0.0);
 
     public static readonly StyledProperty<bool> MuteAudioProperty =
         AvaloniaProperty.Register<BackgroundPlayer, bool>(nameof(MuteAudio), true);
@@ -301,8 +301,12 @@ public class BackgroundPlayer : UserControl, IDisposable
 
             if (media != null)
             {
-                // Add options for smooth looping and muting
+                // Add options for smooth looping, muting, and video scaling to fill/crop
                 media.AddOption(":input-repeat=65535"); // Loop many times
+                media.AddOption(":aspect-ratio=16:9");  // Force aspect ratio
+                media.AddOption(":video-filter=croppadd"); // Enable crop filter
+                media.AddOption(":croppadd-croptop=0");
+                media.AddOption(":croppadd-cropbottom=0");
                 if (MuteAudio)
                 {
                     media.AddOption(":no-audio");
