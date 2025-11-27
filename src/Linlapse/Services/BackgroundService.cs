@@ -148,12 +148,12 @@ public class BackgroundService : IDisposable
 
     private string? GetBackgroundApiUrl(GameInfo game)
     {
-        // Use the unified HoYoPlay API which returns all games with backgrounds
+        // Use getAllGameBasicInfo API which returns backgrounds including video backgrounds
         return game.Region switch
         {
-            GameRegion.Global => "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGames?launcher_id=VYTpXlbWo8&language=en-us",
-            GameRegion.China => "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGames?launcher_id=jGHBHlcOq1&language=zh-cn",
-            GameRegion.SEA => "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGames?launcher_id=VYTpXlbWo8&language=en-us",
+            GameRegion.Global => "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=VYTpXlbWo8&language=en-us",
+            GameRegion.China => "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1&language=zh-cn",
+            GameRegion.SEA => "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=VYTpXlbWo8&language=en-us",
             _ => null
         };
     }
@@ -209,24 +209,95 @@ public class BackgroundService : IDisposable
                 GameId = game.Id
             };
 
-            // HoYoPlay API format: data.games[] array with each game having display.background.url
-            if (data.TryGetProperty("games", out var games) && games.ValueKind == JsonValueKind.Array)
-            {
-                var gameBiz = GetGameBiz(game);
-                if (gameBiz == null)
-                    return null;
+            var gameBiz = GetGameBiz(game);
+            if (gameBiz == null)
+                return null;
 
-                foreach (var gameEntry in games.EnumerateArray())
+            // getAllGameBasicInfo API format: data.game_info_list[] with game.biz and backgrounds[]
+            if (data.TryGetProperty("game_info_list", out var gameInfoList) && gameInfoList.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var gameInfo in gameInfoList.EnumerateArray())
                 {
-                    // Match by biz identifier
-                    if (!gameEntry.TryGetProperty("biz", out var biz))
+                    // Match by game.biz identifier
+                    if (!gameInfo.TryGetProperty("game", out var gameObj) || gameObj.ValueKind != JsonValueKind.Object)
+                        continue;
+
+                    if (!gameObj.TryGetProperty("biz", out var biz))
                         continue;
 
                     var bizStr = biz.GetString();
                     if (bizStr != gameBiz)
                         continue;
 
-                    // Found matching game, get display.background
+                    // Found matching game, get backgrounds array
+                    if (gameInfo.TryGetProperty("backgrounds", out var backgrounds) && 
+                        backgrounds.ValueKind == JsonValueKind.Array && backgrounds.GetArrayLength() > 0)
+                    {
+                        // Get the first background (usually the current/featured one)
+                        var firstBg = backgrounds[0];
+
+                        // Check background type - prefer video if available
+                        var bgType = "BACKGROUND_TYPE_UNSPECIFIED";
+                        if (firstBg.TryGetProperty("type", out var typeElement))
+                        {
+                            bgType = typeElement.GetString() ?? "BACKGROUND_TYPE_UNSPECIFIED";
+                        }
+
+                        // Get video URL if it's a video background
+                        if (bgType == "BACKGROUND_TYPE_VIDEO" && 
+                            firstBg.TryGetProperty("video", out var video) && video.ValueKind == JsonValueKind.Object)
+                        {
+                            if (video.TryGetProperty("url", out var videoUrl))
+                            {
+                                var videoUrlStr = videoUrl.GetString();
+                                if (!string.IsNullOrEmpty(videoUrlStr))
+                                {
+                                    backgroundInfo.VideoUrl = videoUrlStr;
+                                    backgroundInfo.Type = BackgroundType.Video;
+                                    backgroundInfo.Url = videoUrlStr;
+                                }
+                            }
+                        }
+
+                        // Get static background image (fallback or for image-only backgrounds)
+                        if (firstBg.TryGetProperty("background", out var background) && background.ValueKind == JsonValueKind.Object)
+                        {
+                            if (background.TryGetProperty("url", out var bgUrl))
+                            {
+                                var bgUrlStr = bgUrl.GetString();
+                                if (!string.IsNullOrEmpty(bgUrlStr))
+                                {
+                                    // If we already have a video, keep the image as fallback
+                                    if (backgroundInfo.Type == BackgroundType.Video)
+                                    {
+                                        backgroundInfo.FallbackUrl = bgUrlStr;
+                                    }
+                                    else
+                                    {
+                                        backgroundInfo.Url = bgUrlStr;
+                                        backgroundInfo.Type = BackgroundType.Image;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    break;
+                }
+            }
+
+            // Fallback: getGames API format (data.games[] with display.background)
+            if (string.IsNullOrEmpty(backgroundInfo.Url) && 
+                data.TryGetProperty("games", out var games) && games.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var gameEntry in games.EnumerateArray())
+                {
+                    if (!gameEntry.TryGetProperty("biz", out var biz))
+                        continue;
+
+                    if (biz.GetString() != gameBiz)
+                        continue;
+
                     if (gameEntry.TryGetProperty("display", out var display) && display.ValueKind == JsonValueKind.Object)
                     {
                         if (display.TryGetProperty("background", out var background) && background.ValueKind == JsonValueKind.Object)
@@ -237,47 +308,8 @@ public class BackgroundService : IDisposable
                                 backgroundInfo.Type = BackgroundType.Image;
                             }
                         }
-
-                        // Fallback to icon if no background
-                        if (string.IsNullOrEmpty(backgroundInfo.Url) && 
-                            display.TryGetProperty("icon", out var icon) && icon.ValueKind == JsonValueKind.Object)
-                        {
-                            if (icon.TryGetProperty("url", out var iconUrl))
-                            {
-                                backgroundInfo.Url = iconUrl.GetString() ?? "";
-                                backgroundInfo.Type = BackgroundType.Image;
-                            }
-                        }
                     }
-
                     break;
-                }
-            }
-
-            // Legacy format support: adv -> background
-            if (string.IsNullOrEmpty(backgroundInfo.Url) && 
-                data.TryGetProperty("adv", out var adv) && adv.ValueKind == JsonValueKind.Object)
-            {
-                if (adv.TryGetProperty("background", out var bg))
-                {
-                    backgroundInfo.Url = bg.GetString() ?? "";
-                    backgroundInfo.Type = BackgroundType.Image;
-                }
-            }
-
-            // Legacy format: backgrounds array
-            if (string.IsNullOrEmpty(backgroundInfo.Url) &&
-                data.TryGetProperty("backgrounds", out var backgrounds) && 
-                backgrounds.ValueKind == JsonValueKind.Array && backgrounds.GetArrayLength() > 0)
-            {
-                var firstBg = backgrounds[0];
-                if (firstBg.TryGetProperty("background", out var bgUrl))
-                {
-                    backgroundInfo.Url = bgUrl.GetString() ?? "";
-                }
-                else if (firstBg.TryGetProperty("url", out var url))
-                {
-                    backgroundInfo.Url = url.GetString() ?? "";
                 }
             }
 
@@ -325,6 +357,7 @@ public class BackgroundInfo
     public BackgroundType Type { get; set; } = BackgroundType.Image;
     public string Url { get; set; } = string.Empty;
     public string? VideoUrl { get; set; }
+    public string? FallbackUrl { get; set; }
     public string? Color { get; set; }
     public string? LocalPath { get; set; }
 }
