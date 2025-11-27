@@ -18,6 +18,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly CacheService _cacheService;
     private readonly UpdateService _updateService;
     private readonly GameSettingsService _gameSettingsService;
+    private readonly GameDownloadService _gameDownloadService;
+
+    private CancellationTokenSource? _downloadCts;
 
     [ObservableProperty]
     private GameInfo? _selectedGame;
@@ -52,6 +55,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private CacheInfo? _cacheInfo;
 
+    [ObservableProperty]
+    private GameDownloadInfo? _downloadInfo;
+
+    [ObservableProperty]
+    private string _downloadSizeText = string.Empty;
+
     public ObservableCollection<GameInfo> Games { get; } = new();
 
     public string AppVersion => "1.0.0";
@@ -68,6 +77,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _updateService = new UpdateService(_gameService, _downloadService, _installationService);
         _gameSettingsService = new GameSettingsService(_gameService);
         _launcherService = new GameLauncherService(_settingsService, _gameService);
+        _gameDownloadService = new GameDownloadService(_gameService, _downloadService, _installationService, _settingsService);
 
         // Subscribe to events
         _gameService.GamesListChanged += (_, _) => RefreshGamesCollection();
@@ -398,6 +408,135 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task InstallGameAsync()
+    {
+        if (SelectedGame == null || SelectedGame.IsInstalled) return;
+
+        try
+        {
+            _downloadCts = new CancellationTokenSource();
+            IsDownloading = true;
+            StatusMessage = $"Fetching download information for {SelectedGame.DisplayName}...";
+
+            // First, get download info to show size
+            var downloadInfo = await _gameDownloadService.GetGameDownloadInfoAsync(SelectedGame.Id, _downloadCts.Token);
+            if (downloadInfo == null)
+            {
+                StatusMessage = "Failed to get download information. Game may not be available for download.";
+                IsDownloading = false;
+                return;
+            }
+
+            DownloadInfo = downloadInfo;
+            var sizeMb = downloadInfo.TotalSize / 1024.0 / 1024.0;
+            var sizeGb = sizeMb / 1024.0;
+            DownloadSizeText = sizeGb >= 1 ? $"{sizeGb:F2} GB" : $"{sizeMb:F0} MB";
+            
+            StatusMessage = $"Downloading {SelectedGame.DisplayName} ({DownloadSizeText})...";
+
+            var progress = new Progress<GameDownloadProgress>(p =>
+            {
+                ProgressPercent = p.PercentComplete;
+                var speedMb = p.SpeedBytesPerSecond / 1024.0 / 1024.0;
+                
+                ProgressText = p.State switch
+                {
+                    GameDownloadState.FetchingInfo => "Fetching download information...",
+                    GameDownloadState.Downloading => $"Downloading: {p.PercentComplete:F1}% ({speedMb:F1} MB/s)",
+                    GameDownloadState.DownloadingVoicePacks => $"Downloading voice packs: {p.PercentComplete:F1}%",
+                    GameDownloadState.Verifying => "Verifying downloaded files...",
+                    GameDownloadState.Extracting => $"Extracting: {p.ExtractedFiles}/{p.TotalFiles} files",
+                    GameDownloadState.Cleanup => "Cleaning up...",
+                    GameDownloadState.Completed => "Installation complete!",
+                    GameDownloadState.Failed => $"Failed: {p.ErrorMessage}",
+                    _ => $"{p.State}"
+                };
+
+                StatusMessage = ProgressText;
+            });
+
+            var success = await _gameDownloadService.DownloadAndInstallGameAsync(
+                SelectedGame.Id, 
+                progress: progress, 
+                cancellationToken: _downloadCts.Token);
+
+            if (success)
+            {
+                StatusMessage = $"{SelectedGame.DisplayName} installed successfully!";
+                ProgressText = "Installation complete!";
+            }
+            else if (_downloadCts.IsCancellationRequested)
+            {
+                StatusMessage = "Installation cancelled";
+            }
+            else
+            {
+                StatusMessage = "Installation failed";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Installation cancelled";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Install failed");
+            StatusMessage = $"Installation failed: {ex.Message}";
+        }
+        finally
+        {
+            IsDownloading = false;
+            ProgressPercent = 0;
+            ProgressText = string.Empty;
+            DownloadInfo = null;
+            _downloadCts?.Dispose();
+            _downloadCts = null;
+        }
+    }
+
+    [RelayCommand]
+    private void CancelDownload()
+    {
+        _downloadCts?.Cancel();
+        StatusMessage = "Cancelling download...";
+    }
+
+    [RelayCommand]
+    private async Task GetDownloadInfoAsync()
+    {
+        if (SelectedGame == null) return;
+
+        try
+        {
+            IsLoading = true;
+            StatusMessage = $"Fetching download info for {SelectedGame.DisplayName}...";
+
+            var info = await _gameDownloadService.GetGameDownloadInfoAsync(SelectedGame.Id);
+            if (info != null)
+            {
+                DownloadInfo = info;
+                var sizeMb = info.TotalSize / 1024.0 / 1024.0;
+                var sizeGb = sizeMb / 1024.0;
+                DownloadSizeText = sizeGb >= 1 ? $"{sizeGb:F2} GB" : $"{sizeMb:F0} MB";
+                StatusMessage = $"Version {info.Version} - Download size: {DownloadSizeText}";
+            }
+            else
+            {
+                StatusMessage = "Could not retrieve download information";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get download info");
+            StatusMessage = "Failed to get download information";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
     private async Task LoadCacheInfoAsync()
     {
         if (SelectedGame == null || !SelectedGame.IsInstalled) return;
@@ -428,14 +567,21 @@ public partial class MainWindowViewModel : ViewModelBase
             IsGameRunning = _launcherService.IsGameRunning(value.Id);
             AvailableUpdate = null;
             CacheInfo = null;
+            DownloadInfo = null;
+            DownloadSizeText = string.Empty;
             
-            // Load cache info in background
-            _ = LoadCacheInfoAsync();
-            
-            // Check for updates in background
             if (value.IsInstalled)
             {
+                // Load cache info in background
+                _ = LoadCacheInfoAsync();
+                
+                // Check for updates in background
                 _ = CheckForUpdatesAsync();
+            }
+            else
+            {
+                // Get download info for non-installed games
+                _ = GetDownloadInfoAsync();
             }
         }
     }

@@ -199,6 +199,14 @@
                                         <Run Text="{Binding SelectedGame.Version, FallbackValue='Unknown'}" Foreground="White"/>
                                     </TextBlock>
                                 </Border>
+                                <!-- Download size for non-installed games -->
+                                <Border Background="#3b3b5c" CornerRadius="6" Padding="12,6"
+                                        IsVisible="{Binding !SelectedGame.IsInstalled}">
+                                    <TextBlock Foreground="#a1a1aa">
+                                        <Run Text="Download: "/>
+                                        <Run Text="{Binding DownloadSizeText, FallbackValue='Checking...'}" Foreground="White"/>
+                                    </TextBlock>
+                                </Border>
                             </StackPanel>
                             
                             <!-- Update Available Banner -->
@@ -220,6 +228,30 @@
                                             Classes="primary"
                                             Command="{Binding ApplyUpdateCommand}"/>
                                 </Grid>
+                            </Border>
+
+                            <!-- Download Info for non-installed games -->
+                            <Border Background="#1e3a5f" 
+                                    CornerRadius="8" 
+                                    Padding="16,12"
+                                    Margin="0,16,0,0"
+                                    IsVisible="{Binding DownloadInfo, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel>
+                                    <TextBlock Text="Download Information" FontWeight="SemiBold" Foreground="#93c5fd" Margin="0,0,0,8"/>
+                                    <TextBlock Foreground="#71717a" FontSize="12">
+                                        <Run Text="Version: "/>
+                                        <Run Text="{Binding DownloadInfo.Version}" Foreground="#93c5fd"/>
+                                    </TextBlock>
+                                    <TextBlock Foreground="#71717a" FontSize="12" Margin="0,4,0,0">
+                                        <Run Text="Size: "/>
+                                        <Run Text="{Binding DownloadSizeText}" Foreground="#93c5fd"/>
+                                    </TextBlock>
+                                    <TextBlock Foreground="#71717a" FontSize="12" Margin="0,4,0,0"
+                                               IsVisible="{Binding DownloadInfo.VoicePacks.Count}">
+                                        <Run Text="Voice packs available: "/>
+                                        <Run Text="{Binding DownloadInfo.VoicePacks.Count}" Foreground="#93c5fd"/>
+                                    </TextBlock>
+                                </StackPanel>
                             </Border>
 
                             <!-- Cache Info -->
@@ -257,10 +289,16 @@
                                          CornerRadius="4"
                                          Background="#3f3f46"
                                          Foreground="#6366f1"/>
-                            <TextBlock Text="{Binding ProgressText}"
-                                       Foreground="#a1a1aa"
-                                       FontSize="12"
-                                       Margin="0,8,0,0"/>
+                            <Grid Margin="0,8,0,0">
+                                <TextBlock Text="{Binding ProgressText}"
+                                           Foreground="#a1a1aa"
+                                           FontSize="12"/>
+                                <Button Content="Cancel"
+                                        Classes="secondary"
+                                        HorizontalAlignment="Right"
+                                        Command="{Binding CancelDownloadCommand}"
+                                        Padding="8,4"/>
+                            </Grid>
                         </StackPanel>
 
                         <!-- Action Buttons -->
@@ -269,13 +307,25 @@
                                     Spacing="12"
                                     Margin="0,16,0,0"
                                     HorizontalAlignment="Left">
-                            <!-- Launch Button -->
+                            <!-- Launch Button (for installed games) -->
                             <Button Classes="primary"
                                     Command="{Binding LaunchGameCommand}"
-                                    IsEnabled="{Binding SelectedGame.IsInstalled}">
+                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    IsEnabled="{Binding !IsGameRunning}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="▶"/>
                                     <TextBlock Text="Launch Game"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <!-- Install Button (for non-installed games) -->
+                            <Button Classes="primary"
+                                    Command="{Binding InstallGameCommand}"
+                                    IsVisible="{Binding !SelectedGame.IsInstalled}"
+                                    IsEnabled="{Binding !IsDownloading}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="📥"/>
+                                    <TextBlock Text="Install Game"/>
                                 </StackPanel>
                             </Button>
                             

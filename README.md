@@ -17,10 +17,13 @@
 - 📊 **Game Status Tracking**: Track installation state, version, and play time
 
 ### Download & Installation
-- 📥 **Multi-Session Downloads**: Fast parallel downloads with resume support
+- 📥 **Game Downloads**: Download games directly from official miHoYo/HoYoverse APIs
+- 🚀 **Multi-Session Downloads**: Fast parallel downloads with resume support
 - 📦 **Archive Extraction**: Support for ZIP archive extraction
-- ⏸️ **Pause/Resume**: Pause and resume downloads at any time
+- ⏸️ **Pause/Resume/Cancel**: Full control over downloads with cancellation support
 - 🔄 **Speed Limiting**: Configurable download speed limits
+- 🎙️ **Voice Pack Selection**: Choose voice language packs during installation
+- ✅ **Download Verification**: MD5 hash verification of downloaded files
 
 ### Game Repair & Verification
 - 🔧 **File Verification**: Verify game file integrity using checksums
