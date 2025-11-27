@@ -75,7 +75,8 @@ public class BackgroundService : IDisposable
             return null;
         }
 
-        var extension = backgroundInfo.Type == BackgroundType.Video ? ".mp4" : ".jpg";
+        // Determine file extension from URL or type
+        var extension = GetFileExtension(backgroundInfo.Url, backgroundInfo.Type);
         var cacheFileName = $"{gameId}_bg{extension}";
         var cachePath = Path.Combine(_backgroundCacheDir, cacheFileName);
 
@@ -95,7 +96,8 @@ public class BackgroundService : IDisposable
         {
             var bytes = await _httpClient.GetByteArrayAsync(backgroundInfo.Url, cancellationToken);
             await File.WriteAllBytesAsync(cachePath, bytes, cancellationToken);
-            Log.Information("Downloaded background for {GameId}: {Path}", gameId, cachePath);
+            Log.Information("Downloaded background for {GameId}: {Path} ({Type})", 
+                gameId, cachePath, backgroundInfo.Type);
             return cachePath;
         }
         catch (Exception ex)
@@ -104,6 +106,26 @@ public class BackgroundService : IDisposable
             // Return cached version if download fails
             return File.Exists(cachePath) ? cachePath : null;
         }
+    }
+
+    private static string GetFileExtension(string url, BackgroundType type)
+    {
+        // Try to get extension from URL
+        try
+        {
+            var uri = new Uri(url);
+            var path = uri.AbsolutePath;
+            var ext = Path.GetExtension(path).ToLowerInvariant();
+            
+            if (!string.IsNullOrEmpty(ext))
+            {
+                return ext; // .webm, .webp, .mp4, .jpg, etc.
+            }
+        }
+        catch { }
+
+        // Fallback based on type
+        return type == BackgroundType.Video ? ".webm" : ".webp";
     }
 
     /// <summary>
