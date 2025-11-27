@@ -472,7 +472,7 @@ public class GameDownloadService : IDisposable
                                     if (firstPkg.ValueKind != JsonValueKind.Undefined)
                                     {
                                         downloadInfo.DownloadUrl = firstPkg.TryGetProperty("url", out var url) ? url.GetString() ?? "" : "";
-                                        downloadInfo.TotalSize = firstPkg.TryGetProperty("size", out var sz) ? sz.GetInt64() : 0;
+                                        downloadInfo.TotalSize = firstPkg.TryGetProperty("size", out var sz) ? GetInt64FromElement(sz) : 0;
                                         downloadInfo.PackageMd5 = firstPkg.TryGetProperty("md5", out var m) ? m.GetString() : null;
                                     }
                                 }
@@ -486,7 +486,7 @@ public class GameDownloadService : IDisposable
                                         {
                                             Language = audio.TryGetProperty("language", out var lang) ? lang.GetString() ?? "" : "",
                                             DownloadUrl = audio.TryGetProperty("url", out var aUrl) ? aUrl.GetString() ?? "" : "",
-                                            Size = audio.TryGetProperty("size", out var aSize) ? aSize.GetInt64() : 0,
+                                            Size = audio.TryGetProperty("size", out var aSize) ? GetInt64FromElement(aSize) : 0,
                                             Md5 = audio.TryGetProperty("md5", out var aMd5) ? aMd5.GetString() : null
                                         };
                                         downloadInfo.VoicePacks.Add(voicePack);

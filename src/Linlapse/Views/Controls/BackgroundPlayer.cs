@@ -170,6 +170,14 @@ public class BackgroundPlayer : UserControl, IDisposable
 
             if (_imageView == null) return;
 
+            // Check if this is a video file - we can't display it as an image
+            if (IsVideoFile(source))
+            {
+                Log.Warning("Cannot display video file {Path} as image - LibVLC not available. " +
+                    "Install libvlc: sudo apt install vlc (Debian/Ubuntu) or sudo dnf install vlc (Fedora)", source);
+                return;
+            }
+
             // Show image view
             _imageView.IsVisible = true;
 
@@ -199,6 +207,12 @@ public class BackgroundPlayer : UserControl, IDisposable
         {
             Log.Error(ex, "Error showing image background");
         }
+    }
+
+    private static bool IsVideoFile(string path)
+    {
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        return extension is ".webm" or ".mp4" or ".mkv" or ".avi" or ".mov" or ".wmv" or ".flv";
     }
 
     private async Task LoadImageFromUrlAsync(string url)
