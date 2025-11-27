@@ -17,13 +17,15 @@ public class BackgroundPlayer : UserControl, IDisposable
 {
     private static LibVLC? _sharedLibVLC;
     private static bool _libVLCInitialized;
+    private static bool _libVLCAvailable;
     private static readonly object _initLock = new();
 
     private MediaPlayer? _mediaPlayer;
     private Image? _imageView;
-    private Border? _overlayBorder;
     private VideoView? _videoView;
+    private Grid? _contentGrid;
     private string? _currentSource;
+    private bool _currentIsVideo;
     private bool _isDisposed;
 
     public static readonly StyledProperty<string?> SourceProperty =
@@ -31,9 +33,6 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     public static readonly StyledProperty<bool> IsVideoProperty =
         AvaloniaProperty.Register<BackgroundPlayer, bool>(nameof(IsVideo));
-
-    public static readonly StyledProperty<double> OverlayOpacityProperty =
-        AvaloniaProperty.Register<BackgroundPlayer, double>(nameof(OverlayOpacity), 0.0);
 
     public static readonly StyledProperty<bool> MuteAudioProperty =
         AvaloniaProperty.Register<BackgroundPlayer, bool>(nameof(MuteAudio), true);
@@ -48,12 +47,6 @@ public class BackgroundPlayer : UserControl, IDisposable
     {
         get => GetValue(IsVideoProperty);
         set => SetValue(IsVideoProperty, value);
-    }
-
-    public double OverlayOpacity
-    {
-        get => GetValue(OverlayOpacityProperty);
-        set => SetValue(OverlayOpacityProperty, value);
     }
 
     public bool MuteAudio
@@ -73,6 +66,7 @@ public class BackgroundPlayer : UserControl, IDisposable
         lock (_initLock)
         {
             if (_libVLCInitialized) return;
+            _libVLCInitialized = true;
 
             try
             {
@@ -86,22 +80,22 @@ public class BackgroundPlayer : UserControl, IDisposable
                     "--no-video-title-show" // Don't show title on video
                 );
 
-                _libVLCInitialized = true;
+                _libVLCAvailable = true;
                 Log.Information("LibVLC initialized successfully");
             }
             catch (Exception ex)
             {
                 Log.Warning(ex, "Failed to initialize LibVLC - video backgrounds will not be available. " +
-                    "Install libvlc: sudo apt install libvlc-dev (Debian/Ubuntu) or sudo dnf install vlc-devel (Fedora)");
-                _libVLCInitialized = false;
+                    "Install libvlc: sudo apt install vlc (Debian/Ubuntu) or sudo dnf install vlc (Fedora)");
+                _libVLCAvailable = false;
             }
         }
     }
 
     private void InitializeComponent()
     {
-        // Create the grid to hold background and overlay
-        var grid = new Grid();
+        // Create the grid to hold background
+        _contentGrid = new Grid();
 
         // Create image view (default/fallback)
         _imageView = new Image
@@ -110,17 +104,9 @@ public class BackgroundPlayer : UserControl, IDisposable
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
-        grid.Children.Add(_imageView);
+        _contentGrid.Children.Add(_imageView);
 
-        // Create overlay for darkening effect
-        _overlayBorder = new Border
-        {
-            Background = new SolidColorBrush(Colors.Black),
-            Opacity = OverlayOpacity
-        };
-        grid.Children.Add(_overlayBorder);
-
-        Content = grid;
+        Content = _contentGrid;
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -130,10 +116,6 @@ public class BackgroundPlayer : UserControl, IDisposable
         if (change.Property == SourceProperty || change.Property == IsVideoProperty)
         {
             UpdateBackground();
-        }
-        else if (change.Property == OverlayOpacityProperty && _overlayBorder != null)
-        {
-            _overlayBorder.Opacity = OverlayOpacity;
         }
         else if (change.Property == MuteAudioProperty && _mediaPlayer != null)
         {
@@ -146,14 +128,35 @@ public class BackgroundPlayer : UserControl, IDisposable
         var source = Source;
         var isVideo = IsVideo;
 
-        if (string.IsNullOrEmpty(source) || source == _currentSource)
+        // Always update if source changed OR if video state changed
+        if (source == _currentSource && isVideo == _currentIsVideo)
             return;
 
-        _currentSource = source;
+        // Clear previous state
+        ClearBackground();
 
-        if (isVideo && _sharedLibVLC != null)
+        _currentSource = source;
+        _currentIsVideo = isVideo;
+
+        if (string.IsNullOrEmpty(source))
+        {
+            Log.Debug("Background source cleared");
+            return;
+        }
+
+        // Auto-detect video from file extension if IsVideo is false
+        var isActuallyVideo = isVideo || IsVideoFile(source);
+
+        if (isActuallyVideo && _libVLCAvailable && _sharedLibVLC != null)
         {
             ShowVideo(source);
+        }
+        else if (isActuallyVideo && !_libVLCAvailable)
+        {
+            // Video file but LibVLC not available - show nothing or fallback
+            Log.Warning("Cannot display video background - LibVLC not available. " +
+                "Install VLC: sudo apt install vlc (Debian/Ubuntu) or sudo dnf install vlc (Fedora)");
+            // Don't try to load as image - it will fail
         }
         else
         {
@@ -161,22 +164,27 @@ public class BackgroundPlayer : UserControl, IDisposable
         }
     }
 
+    private void ClearBackground()
+    {
+        // Stop video playback
+        StopVideo();
+
+        // Clear image
+        if (_imageView != null)
+        {
+            _imageView.Source = null;
+            _imageView.IsVisible = true;
+        }
+    }
+
     private void ShowImage(string source)
     {
         try
         {
-            // Stop any playing video
+            if (_imageView == null || _contentGrid == null) return;
+
+            // Make sure video is stopped and removed
             StopVideo();
-
-            if (_imageView == null) return;
-
-            // Check if this is a video file - we can't display it as an image
-            if (IsVideoFile(source))
-            {
-                Log.Warning("Cannot display video file {Path} as image - LibVLC not available. " +
-                    "Install libvlc: sudo apt install vlc (Debian/Ubuntu) or sudo dnf install vlc (Fedora)", source);
-                return;
-            }
 
             // Show image view
             _imageView.IsVisible = true;
@@ -187,9 +195,12 @@ public class BackgroundPlayer : UserControl, IDisposable
                 {
                     try
                     {
-                        var bitmap = new Bitmap(source);
-                        _imageView.Source = bitmap;
-                        Log.Debug("Loaded background image: {Path}", source);
+                        if (_imageView != null)
+                        {
+                            var bitmap = new Bitmap(source);
+                            _imageView.Source = bitmap;
+                            Log.Debug("Loaded background image: {Path}", source);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -249,16 +260,15 @@ public class BackgroundPlayer : UserControl, IDisposable
 
     private void ShowVideo(string source)
     {
-        if (_sharedLibVLC == null)
+        if (_sharedLibVLC == null || _contentGrid == null)
         {
-            Log.Warning("LibVLC not available, falling back to image");
-            ShowImage(source);
+            Log.Warning("LibVLC not available for video playback");
             return;
         }
 
         try
         {
-            // Hide image view
+            // Hide image view when showing video
             if (_imageView != null)
                 _imageView.IsVisible = false;
 
@@ -270,9 +280,14 @@ public class BackgroundPlayer : UserControl, IDisposable
                 _mediaPlayer.EnableHardwareDecoding = true;
                 _mediaPlayer.EndReached += OnVideoEndReached;
             }
+            else
+            {
+                // Stop any current playback
+                _mediaPlayer.Stop();
+            }
 
-            // Create VideoView from LibVLCSharp.Avalonia if needed
-            if (_videoView == null && Content is Grid grid)
+            // Create VideoView if needed
+            if (_videoView == null)
             {
                 _videoView = new VideoView
                 {
@@ -280,12 +295,8 @@ public class BackgroundPlayer : UserControl, IDisposable
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     VerticalAlignment = VerticalAlignment.Stretch
                 };
-                // Insert at beginning so it's behind the overlay
-                grid.Children.Insert(0, _videoView);
-            }
-            else if (_videoView != null)
-            {
-                _videoView.MediaPlayer = _mediaPlayer;
+                // Insert at beginning so it's behind other content
+                _contentGrid.Children.Insert(0, _videoView);
             }
 
             // Create and play media
@@ -301,12 +312,8 @@ public class BackgroundPlayer : UserControl, IDisposable
 
             if (media != null)
             {
-                // Add options for smooth looping, muting, and video scaling to fill/crop
+                // Add options for looping and muting
                 media.AddOption(":input-repeat=65535"); // Loop many times
-                media.AddOption(":aspect-ratio=16:9");  // Force aspect ratio
-                media.AddOption(":video-filter=croppadd"); // Enable crop filter
-                media.AddOption(":croppadd-croptop=0");
-                media.AddOption(":croppadd-cropbottom=0");
                 if (MuteAudio)
                 {
                     media.AddOption(":no-audio");
@@ -318,8 +325,7 @@ public class BackgroundPlayer : UserControl, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Error showing video background, falling back to image");
-            ShowImage(source);
+            Log.Error(ex, "Error showing video background");
         }
     }
 
@@ -342,9 +348,9 @@ public class BackgroundPlayer : UserControl, IDisposable
         {
             _mediaPlayer?.Stop();
 
-            if (_videoView != null && Content is Grid grid)
+            if (_videoView != null && _contentGrid != null)
             {
-                grid.Children.Remove(_videoView);
+                _contentGrid.Children.Remove(_videoView);
                 _videoView = null;
             }
         }
@@ -382,6 +388,7 @@ public class BackgroundPlayer : UserControl, IDisposable
         _sharedLibVLC?.Dispose();
         _sharedLibVLC = null;
         _libVLCInitialized = false;
+        _libVLCAvailable = false;
     }
 }
 
