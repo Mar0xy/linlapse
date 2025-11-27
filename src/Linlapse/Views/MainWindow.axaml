@@ -1,0 +1,273 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Linlapse.ViewModels"
+        xmlns:models="using:Linlapse.Models"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
+        x:Class="Linlapse.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Linlapse - Game Launcher"
+        Width="1200" Height="700"
+        MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="#1a1a2e">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Window.Styles>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="#6366f1"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="24,12"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+        <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#818cf8"/>
+        </Style>
+        <Style Selector="Button.secondary">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#a1a1aa"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#3f3f46"/>
+            <Setter Property="CornerRadius" Value="6"/>
+        </Style>
+        <Style Selector="Button.secondary:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#27272a"/>
+        </Style>
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3b3b5c"/>
+        </Style>
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#2a2a40"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Sidebar -->
+        <Border Grid.Column="0" Background="#16162a" Padding="16">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <!-- Logo/Title -->
+                <StackPanel Grid.Row="0" Margin="0,0,0,24">
+                    <TextBlock Text="🎮 Linlapse" 
+                               FontSize="24" 
+                               FontWeight="Bold" 
+                               Foreground="White"/>
+                    <TextBlock Text="Linux Game Launcher"
+                               FontSize="12"
+                               Foreground="#71717a"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+
+                <!-- Game List -->
+                <ListBox Grid.Row="1" 
+                         ItemsSource="{Binding Games}"
+                         SelectedItem="{Binding SelectedGame}"
+                         Background="Transparent"
+                         BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:GameInfo">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Grid.Column="0"
+                                        Width="40" Height="40"
+                                        CornerRadius="8"
+                                        Background="#3b3b5c"
+                                        Margin="0,0,12,0">
+                                    <TextBlock Text="🎯" 
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Center"
+                                               FontSize="18"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               FontWeight="SemiBold"
+                                               Foreground="White"/>
+                                    <TextBlock FontSize="11" Foreground="#71717a">
+                                        <TextBlock.Text>
+                                            <MultiBinding StringFormat="{}{0} • {1}">
+                                                <Binding Path="Region"/>
+                                                <Binding Path="State"/>
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                </StackPanel>
+                                <Border Grid.Column="2"
+                                        IsVisible="{Binding IsInstalled}"
+                                        Background="#22c55e"
+                                        CornerRadius="4"
+                                        Padding="6,2">
+                                    <TextBlock Text="✓" FontSize="10" Foreground="White"/>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- Bottom Actions -->
+                <StackPanel Grid.Row="2" Spacing="8">
+                    <Button Content="⟳ Refresh Games" 
+                            Classes="secondary"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding RefreshGamesCommand}"/>
+                    <TextBlock Text="{Binding WineVersion}"
+                               FontSize="11"
+                               Foreground="#52525b"
+                               TextWrapping="Wrap"
+                               Margin="0,8,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Game Details Panel -->
+            <Border Grid.Row="0" 
+                    Margin="24"
+                    CornerRadius="16"
+                    ClipToBounds="True">
+                <Grid>
+                    <!-- Background Gradient -->
+                    <Border Background="Linear Gradient(135deg, #2d2d5a 0%, #1a1a2e 100%)"
+                            Opacity="0.95"/>
+                    
+                    <!-- Content when game is selected -->
+                    <Grid IsVisible="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNotNull}}"
+                          Margin="32">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Game Info -->
+                        <StackPanel Grid.Row="0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding SelectedGame.DisplayName}"
+                                       FontSize="48"
+                                       FontWeight="Bold"
+                                       Foreground="White"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,16,0,0" Spacing="16">
+                                <Border Background="#3b3b5c" CornerRadius="6" Padding="12,6">
+                                    <TextBlock Foreground="#a1a1aa">
+                                        <Run Text="Region: "/>
+                                        <Run Text="{Binding SelectedGame.Region}" Foreground="White"/>
+                                    </TextBlock>
+                                </Border>
+                                <Border Background="#3b3b5c" CornerRadius="6" Padding="12,6">
+                                    <TextBlock Foreground="#a1a1aa">
+                                        <Run Text="Status: "/>
+                                        <Run Text="{Binding SelectedGame.State}" Foreground="White"/>
+                                    </TextBlock>
+                                </Border>
+                                <Border Background="#3b3b5c" CornerRadius="6" Padding="12,6"
+                                        IsVisible="{Binding SelectedGame.IsInstalled}">
+                                    <TextBlock Foreground="#a1a1aa">
+                                        <Run Text="Version: "/>
+                                        <Run Text="{Binding SelectedGame.Version, FallbackValue='Unknown'}" Foreground="White"/>
+                                    </TextBlock>
+                                </Border>
+                            </StackPanel>
+                            
+                            <TextBlock Text="{Binding SelectedGame.InstallPath}"
+                                       IsVisible="{Binding SelectedGame.IsInstalled}"
+                                       Foreground="#52525b"
+                                       FontSize="12"
+                                       Margin="0,16,0,0"/>
+                        </StackPanel>
+
+                        <!-- Action Buttons -->
+                        <StackPanel Grid.Row="1" 
+                                    Orientation="Horizontal" 
+                                    Spacing="12"
+                                    HorizontalAlignment="Left">
+                            <Button Classes="primary"
+                                    Command="{Binding LaunchGameCommand}"
+                                    IsEnabled="{Binding SelectedGame.IsInstalled}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="▶"/>
+                                    <TextBlock Text="Launch Game"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="secondary"
+                                    IsVisible="{Binding IsGameRunning}"
+                                    Command="{Binding StopGameCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="⏹"/>
+                                    <TextBlock Text="Stop Game"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="secondary"
+                                    IsVisible="{Binding !SelectedGame.IsInstalled}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="📥"/>
+                                    <TextBlock Text="Install Game"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="secondary"
+                                    IsVisible="{Binding SelectedGame.IsInstalled}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="🔧"/>
+                                    <TextBlock Text="Repair"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="secondary"
+                                    IsVisible="{Binding SelectedGame.IsInstalled}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="⚙"/>
+                                    <TextBlock Text="Settings"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Placeholder when no game is selected -->
+                    <StackPanel IsVisible="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNull}}"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Center">
+                        <TextBlock Text="🎮" FontSize="64" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Select a game from the sidebar"
+                                   FontSize="18"
+                                   Foreground="#71717a"
+                                   Margin="0,16,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Status Bar -->
+            <Border Grid.Row="1" Background="#16162a" Padding="16,8">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding StatusMessage}"
+                               Foreground="#71717a"
+                               VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16">
+                        <ProgressBar IsVisible="{Binding IsLoading}"
+                                     IsIndeterminate="True"
+                                     Width="100"/>
+                        <TextBlock Text="{Binding AppVersion, StringFormat='v{0}'}"
+                                   Foreground="#52525b"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
