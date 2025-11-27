@@ -359,34 +359,32 @@ public class GameDownloadService : IDisposable
 
     private string? GetGameApiUrl(GameInfo game)
     {
-        // Note: These are the official launcher API endpoints
-        // Keys are public and used by the official launchers
+        // Use the new HoYoPlay API endpoints for game packages
+        // These provide consistent download information across all games
+        var launcherId = game.Region switch
+        {
+            GameRegion.Global => "VYTpXlbWo8",  // Global/OS launcher
+            GameRegion.China => "jGHBHlcOq1",   // CN launcher
+            GameRegion.SEA => "VYTpXlbWo8",    // SEA uses global
+            _ => "VYTpXlbWo8"
+        };
+
+        var baseUrl = game.Region == GameRegion.China
+            ? "https://hyp-api.mihoyo.com"
+            : "https://sg-hyp-api.hoyoverse.com";
+
+        return $"{baseUrl}/hyp/hyp-connect/api/getGamePackages?launcher_id={launcherId}";
+    }
+
+    private string GetGameBizFromType(GameInfo game)
+    {
         return game.GameType switch
         {
-            GameType.HonkaiImpact3rd => game.Region switch
-            {
-                GameRegion.Global => "https://sdk-os-static.mihoyo.com/bh3_global/mdk/launcher/api/resource?key=dpz65xJ3&launcher_id=10",
-                GameRegion.SEA => "https://sdk-os-static.mihoyo.com/bh3_global/mdk/launcher/api/resource?key=tEGNtVhN&launcher_id=9",
-                _ => null
-            },
-            GameType.GenshinImpact => game.Region switch
-            {
-                GameRegion.Global => "https://sdk-os-static.mihoyo.com/hk4e_global/mdk/launcher/api/resource?key=gcStgarh&launcher_id=10",
-                GameRegion.China => "https://sdk-static.mihoyo.com/hk4e_cn/mdk/launcher/api/resource?key=eYd89JmJ&launcher_id=18",
-                _ => null
-            },
-            GameType.HonkaiStarRail => game.Region switch
-            {
-                GameRegion.Global => "https://hkrpg-launcher-static.hoyoverse.com/hkrpg_global/mdk/launcher/api/resource?key=vplOVX8Vn7cwG8yb&launcher_id=35",
-                GameRegion.China => "https://api-launcher.mihoyo.com/hkrpg_cn/mdk/launcher/api/resource?key=6KcVuOkbcqjJomjZ&launcher_id=33",
-                _ => null
-            },
-            GameType.ZenlessZoneZero => game.Region switch
-            {
-                GameRegion.Global => "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGamePackages?launcher_id=VYTpXlbWo8",
-                _ => null
-            },
-            _ => null
+            GameType.GenshinImpact => game.Region == GameRegion.China ? "hk4e_cn" : "hk4e_global",
+            GameType.HonkaiStarRail => game.Region == GameRegion.China ? "hkrpg_cn" : "hkrpg_global",
+            GameType.HonkaiImpact3rd => game.Region == GameRegion.China ? "bh3_cn" : "bh3_global",
+            GameType.ZenlessZoneZero => game.Region == GameRegion.China ? "nap_cn" : "nap_global",
+            _ => ""
         };
     }
 
@@ -450,16 +448,21 @@ public class GameDownloadService : IDisposable
                 }
             }
 
-            // Alternative format for newer APIs
+            // Alternative format for newer APIs (HoYoPlay API)
             if (data.TryGetProperty("game_packages", out var gamePackages))
             {
+                var targetBiz = GetGameBizFromType(game);
+                
                 foreach (var package in gamePackages.EnumerateArray())
                 {
                     if (package.TryGetProperty("game", out var pkgGame))
                     {
-                        var gameId = pkgGame.TryGetProperty("id", out var id) ? id.GetString() : "";
+                        var gameBiz = pkgGame.TryGetProperty("biz", out var biz) ? biz.GetString() : "";
+                        
+                        // Match by game biz identifier
+                        if (gameBiz != targetBiz)
+                            continue;
 
-                        // Match by game type
                         if (package.TryGetProperty("main", out var main))
                         {
                             if (main.TryGetProperty("major", out var major))
@@ -492,9 +495,12 @@ public class GameDownloadService : IDisposable
                                         downloadInfo.VoicePacks.Add(voicePack);
                                     }
                                 }
+                                
+                                Log.Debug("Parsed download info for {GameBiz}: Version={Version}, URL={Url}", 
+                                    gameBiz, downloadInfo.Version, downloadInfo.DownloadUrl);
                             }
                         }
-                        break; // Use first matching package
+                        break; // Found our game
                     }
                 }
             }
