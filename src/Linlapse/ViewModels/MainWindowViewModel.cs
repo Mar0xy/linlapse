@@ -23,6 +23,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     // Dictionary to track cancellation tokens for each downloading game
     private readonly Dictionary<string, CancellationTokenSource> _downloadCancellationTokens = new();
+    // Dictionary to track download progress for each downloading game
+    private readonly Dictionary<string, (double ProgressPercent, string ProgressText)> _downloadProgressByGame = new();
     private bool _isRestoringSelection;
 
     [ObservableProperty]
@@ -581,17 +583,24 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var progress = new Progress<UpdateProgress>(p =>
             {
+                var progressText = p.State switch
+                {
+                    UpdateState.DownloadingPatch => "Downloading delta patch...",
+                    UpdateState.DownloadingFull => "Downloading full update...",
+                    UpdateState.ApplyingPatch => "Applying patch...",
+                    UpdateState.Extracting => "Extracting files...",
+                    _ => "Updating..."
+                };
+
+                // Store progress for this game
+                _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
+
+                // Update UI if this is the currently selected game
                 if (SelectedGame?.Id == gameId)
                 {
                     ProgressPercent = p.PercentComplete;
-                    StatusMessage = p.State switch
-                    {
-                        UpdateState.DownloadingPatch => "Downloading delta patch...",
-                        UpdateState.DownloadingFull => "Downloading full update...",
-                        UpdateState.ApplyingPatch => "Applying patch...",
-                        UpdateState.Extracting => "Extracting files...",
-                        _ => "Updating..."
-                    };
+                    ProgressText = progressText;
+                    StatusMessage = progressText;
                 }
             });
 
@@ -609,6 +618,7 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             game.IsDownloading = false;
+            _downloadProgressByGame.Remove(gameId);
             
             if (_downloadCancellationTokens.TryGetValue(gameId, out var oldCts))
             {
@@ -625,6 +635,7 @@ public partial class MainWindowViewModel : ViewModelBase
             if (SelectedGame?.Id == gameId)
             {
                 ProgressPercent = 0;
+                ProgressText = string.Empty;
             }
             AvailableUpdate = null;
             IsPreloadAvailable = false;
@@ -664,9 +675,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var progress = new Progress<UpdateProgress>(p =>
             {
+                var progressText = $"Preloading: {p.PercentComplete:F1}%";
+
+                // Store progress for this game
+                _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
+
+                // Update UI if this is the currently selected game
                 if (SelectedGame?.Id == gameId)
                 {
                     ProgressPercent = p.PercentComplete;
+                    ProgressText = progressText;
                 }
             });
 
@@ -684,6 +702,7 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             game.IsDownloading = false;
+            _downloadProgressByGame.Remove(gameId);
             
             if (_downloadCancellationTokens.TryGetValue(gameId, out var oldCts))
             {
@@ -700,6 +719,7 @@ public partial class MainWindowViewModel : ViewModelBase
             if (SelectedGame?.Id == gameId)
             {
                 ProgressPercent = 0;
+                ProgressText = string.Empty;
             }
             OnPropertyChanged(nameof(IsSelectedGameDownloading));
             OnPropertyChanged(nameof(IsAnyGameDownloading));
@@ -757,26 +777,30 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var progress = new Progress<GameDownloadProgress>(p =>
             {
-                // Only update progress UI for the currently selected game
+                var speedMb = p.SpeedBytesPerSecond / 1024.0 / 1024.0;
+
+                var progressText = p.State switch
+                {
+                    GameDownloadState.FetchingInfo => "Fetching download information...",
+                    GameDownloadState.Downloading => $"Downloading: {p.PercentComplete:F1}% ({speedMb:F1} MB/s)",
+                    GameDownloadState.DownloadingVoicePacks => $"Downloading voice packs: {p.PercentComplete:F1}%",
+                    GameDownloadState.Verifying => "Verifying downloaded files...",
+                    GameDownloadState.Extracting => "Extracting...",
+                    GameDownloadState.Cleanup => "Cleaning up...",
+                    GameDownloadState.Completed => "Installation complete!",
+                    GameDownloadState.Failed => $"Failed: {p.ErrorMessage}",
+                    _ => $"{p.State}"
+                };
+
+                // Store progress for this game
+                _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
+
+                // Update UI if this is the currently selected game
                 if (SelectedGame?.Id == gameId)
                 {
                     ProgressPercent = p.PercentComplete;
-                    var speedMb = p.SpeedBytesPerSecond / 1024.0 / 1024.0;
-
-                    ProgressText = p.State switch
-                    {
-                        GameDownloadState.FetchingInfo => "Fetching download information...",
-                        GameDownloadState.Downloading => $"Downloading: {p.PercentComplete:F1}% ({speedMb:F1} MB/s)",
-                        GameDownloadState.DownloadingVoicePacks => $"Downloading voice packs: {p.PercentComplete:F1}%",
-                        GameDownloadState.Verifying => "Verifying downloaded files...",
-                        GameDownloadState.Extracting => "Extracting...",
-                        GameDownloadState.Cleanup => "Cleaning up...",
-                        GameDownloadState.Completed => "Installation complete!",
-                        GameDownloadState.Failed => $"Failed: {p.ErrorMessage}",
-                        _ => $"{p.State}"
-                    };
-
-                    StatusMessage = ProgressText;
+                    ProgressText = progressText;
+                    StatusMessage = progressText;
                 }
             });
 
@@ -815,6 +839,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             // Clean up for this specific game
             game.IsDownloading = false;
+            _downloadProgressByGame.Remove(gameId);
             
             if (_downloadCancellationTokens.TryGetValue(gameId, out var oldCts))
             {
@@ -1001,11 +1026,13 @@ public partial class MainWindowViewModel : ViewModelBase
             IsGameRunning = _launcherService.IsGameRunning(value.Id);
             
             // Update progress display for the newly selected game if it's downloading
-            if (value.IsDownloading)
+            if (value.IsDownloading && _downloadProgressByGame.TryGetValue(value.Id, out var progress))
             {
-                // The download progress will be updated by the progress callback
+                // Restore the stored progress for this game
+                ProgressPercent = progress.ProgressPercent;
+                ProgressText = progress.ProgressText;
             }
-            else
+            else if (!value.IsDownloading)
             {
                 // Reset progress display if the selected game is not downloading
                 ProgressPercent = 0;
