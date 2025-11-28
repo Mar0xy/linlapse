@@ -169,13 +169,22 @@ public class BackgroundService : IDisposable
     }
 
     /// <summary>
-    /// Get and cache game icon
+    /// Get and cache game icon from getGames API
     /// </summary>
     public async Task<string?> GetCachedGameIconAsync(string gameId, CancellationToken cancellationToken = default)
     {
-        var backgroundInfo = await GetBackgroundInfoAsync(gameId, cancellationToken);
-        if (backgroundInfo == null || string.IsNullOrEmpty(backgroundInfo.IconUrl))
+        var game = _gameService.GetGame(gameId);
+        if (game == null)
         {
+            Log.Warning("Game not found for icon: {GameId}", gameId);
+            return null;
+        }
+
+        // Get icon URL from the getGames API
+        var iconUrl = await GetGameIconUrlAsync(game, cancellationToken);
+        if (string.IsNullOrEmpty(iconUrl))
+        {
+            Log.Debug("No icon URL found for {GameId}", gameId);
             return null;
         }
 
@@ -183,7 +192,7 @@ public class BackgroundService : IDisposable
         var extension = ".png";
         try
         {
-            var uri = new Uri(backgroundInfo.IconUrl);
+            var uri = new Uri(iconUrl);
             var ext = Path.GetExtension(uri.AbsolutePath).ToLowerInvariant();
             if (!string.IsNullOrEmpty(ext))
             {
@@ -209,7 +218,7 @@ public class BackgroundService : IDisposable
         // Download the icon
         try
         {
-            var bytes = await _httpClient.GetByteArrayAsync(backgroundInfo.IconUrl, cancellationToken);
+            var bytes = await _httpClient.GetByteArrayAsync(iconUrl, cancellationToken);
             await File.WriteAllBytesAsync(cachePath, bytes, cancellationToken);
             Log.Information("Downloaded icon for {GameId}: {Path}", gameId, cachePath);
             return cachePath;
@@ -219,6 +228,99 @@ public class BackgroundService : IDisposable
             Log.Error(ex, "Failed to download icon for {GameId}", gameId);
             // Return cached version if download fails
             return File.Exists(cachePath) ? cachePath : null;
+        }
+    }
+
+    /// <summary>
+    /// Get game icon URL from getGames API
+    /// </summary>
+    private async Task<string?> GetGameIconUrlAsync(GameInfo game, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var apiUrl = GetGamesApiUrl(game);
+            if (string.IsNullOrEmpty(apiUrl))
+            {
+                return null;
+            }
+
+            var response = await _httpClient.GetStringAsync(apiUrl, cancellationToken);
+            return ParseGameIconUrl(game, response);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to get icon URL for {GameId}", game.Id);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Get the getGames API URL for the game's region
+    /// </summary>
+    private string? GetGamesApiUrl(GameInfo game)
+    {
+        return game.Region switch
+        {
+            GameRegion.Global => "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGames?launcher_id=VYTpXlbWo8&language=en-us",
+            GameRegion.China => "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGames?launcher_id=jGHBHlcOq1&language=zh-cn",
+            GameRegion.SEA => "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGames?launcher_id=VYTpXlbWo8&language=en-us",
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Parse game icon URL from getGames API response
+    /// </summary>
+    private string? ParseGameIconUrl(GameInfo game, string response)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(response);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("data", out var data) || data.ValueKind == JsonValueKind.Null)
+                return null;
+
+            if (!data.TryGetProperty("games", out var games) || games.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var gameBiz = GetGameBiz(game);
+            if (gameBiz == null)
+                return null;
+
+            foreach (var gameEntry in games.EnumerateArray())
+            {
+                if (!gameEntry.TryGetProperty("biz", out var biz))
+                    continue;
+
+                if (biz.GetString() != gameBiz)
+                    continue;
+
+                // Found matching game, get icon from display.icon.url
+                if (gameEntry.TryGetProperty("display", out var display) && display.ValueKind == JsonValueKind.Object)
+                {
+                    if (display.TryGetProperty("icon", out var icon) && icon.ValueKind == JsonValueKind.Object)
+                    {
+                        if (icon.TryGetProperty("url", out var iconUrl))
+                        {
+                            var url = iconUrl.GetString();
+                            if (!string.IsNullOrEmpty(url))
+                            {
+                                Log.Debug("Found icon URL for {GameBiz}: {Url}", gameBiz, url);
+                                return url;
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to parse icon URL for {GameId}", game.Id);
+            return null;
         }
     }
 
