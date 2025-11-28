@@ -569,6 +569,7 @@ public class GameLauncherService
         
         process.StartInfo.Environment["WINEPREFIX"] = winePrefix;
         process.StartInfo.Environment["WINE"] = winePath;
+        process.StartInfo.Environment["WINE64"] = winePath;
         
         process.Start();
         await process.WaitForExitAsync();
