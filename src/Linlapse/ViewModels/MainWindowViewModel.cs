@@ -171,11 +171,32 @@ public partial class MainWindowViewModel : ViewModelBase
             IsLoading = true;
             StatusMessage = "Initializing...";
 
-            // Check Wine installation
+            // Check Wine/Proton installation
             var wineInfo = await _launcherService.GetWineInfoAsync();
-            WineVersion = wineInfo.IsInstalled
-                ? $"Wine: {wineInfo.Version.Trim()}"
-                : "Wine not found - Please install Wine";
+            if (wineInfo.IsInstalled)
+            {
+                if (wineInfo.IsProton)
+                {
+                    WineVersion = $"Proton: {wineInfo.Version.Trim()}";
+                }
+                else
+                {
+                    WineVersion = $"Wine: {wineInfo.Version.Trim()}";
+                }
+            }
+            else
+            {
+                // Check if Proton is configured but not found
+                var settings = _settingsService.Settings;
+                if (settings.UseProton && !string.IsNullOrEmpty(settings.ProtonPath))
+                {
+                    WineVersion = $"Proton not found at: {settings.ProtonPath}";
+                }
+                else
+                {
+                    WineVersion = "Wine not found - Please install Wine";
+                }
+            }
 
             // Scan for installed games
             await _gameService.ScanForInstalledGamesAsync();
@@ -247,16 +268,9 @@ public partial class MainWindowViewModel : ViewModelBase
             var iconPath = await _backgroundService.GetCachedGameIconAsync(game.Id);
             if (!string.IsNullOrEmpty(iconPath) && File.Exists(iconPath))
             {
-                // Update the game's logo path
+                // Update the game's logo path - INotifyPropertyChanged handles UI updates
                 game.LogoImagePath = iconPath;
-                
-                // Force UI update by re-finding and updating the game in the collection
-                var index = Games.IndexOf(game);
-                if (index >= 0)
-                {
-                    // Create a copy with the updated path and replace
-                    Games[index] = game;
-                }
+                Log.Debug("Loaded icon for {GameId}: {Path}", game.Id, iconPath);
             }
         }
         catch (Exception ex)

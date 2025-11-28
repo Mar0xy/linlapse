@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 
 namespace Linlapse.Models;
@@ -5,23 +7,120 @@ namespace Linlapse.Models;
 /// <summary>
 /// Represents a supported game in the launcher
 /// </summary>
-public class GameInfo
+public class GameInfo : INotifyPropertyChanged
 {
-    public string Id { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string DisplayName { get; set; } = string.Empty;
-    public GameType GameType { get; set; }
-    public GameRegion Region { get; set; }
-    public string InstallPath { get; set; } = string.Empty;
-    public string ExecutablePath { get; set; } = string.Empty;
-    public string Version { get; set; } = string.Empty;
-    public string? BackgroundImagePath { get; set; }
-    public string? LogoImagePath { get; set; }
-    public bool IsInstalled { get; set; }
-    public long InstallSize { get; set; }
-    public DateTime? LastPlayed { get; set; }
-    public TimeSpan TotalPlayTime { get; set; }
-    public GameState State { get; set; } = GameState.NotInstalled;
+    private string _id = string.Empty;
+    private string _name = string.Empty;
+    private string _displayName = string.Empty;
+    private GameType _gameType;
+    private GameRegion _region;
+    private string _installPath = string.Empty;
+    private string _executablePath = string.Empty;
+    private string _version = string.Empty;
+    private string? _backgroundImagePath;
+    private string? _logoImagePath;
+    private bool _isInstalled;
+    private long _installSize;
+    private DateTime? _lastPlayed;
+    private TimeSpan _totalPlayTime;
+    private GameState _state = GameState.NotInstalled;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    public string Id
+    {
+        get => _id;
+        set { if (_id != value) { _id = value; OnPropertyChanged(); } }
+    }
+
+    public string Name
+    {
+        get => _name;
+        set { if (_name != value) { _name = value; OnPropertyChanged(); } }
+    }
+
+    public string DisplayName
+    {
+        get => _displayName;
+        set { if (_displayName != value) { _displayName = value; OnPropertyChanged(); } }
+    }
+
+    public GameType GameType
+    {
+        get => _gameType;
+        set { if (_gameType != value) { _gameType = value; OnPropertyChanged(); } }
+    }
+
+    public GameRegion Region
+    {
+        get => _region;
+        set { if (_region != value) { _region = value; OnPropertyChanged(); } }
+    }
+
+    public string InstallPath
+    {
+        get => _installPath;
+        set { if (_installPath != value) { _installPath = value; OnPropertyChanged(); } }
+    }
+
+    public string ExecutablePath
+    {
+        get => _executablePath;
+        set { if (_executablePath != value) { _executablePath = value; OnPropertyChanged(); } }
+    }
+
+    public string Version
+    {
+        get => _version;
+        set { if (_version != value) { _version = value; OnPropertyChanged(); } }
+    }
+
+    public string? BackgroundImagePath
+    {
+        get => _backgroundImagePath;
+        set { if (_backgroundImagePath != value) { _backgroundImagePath = value; OnPropertyChanged(); } }
+    }
+
+    public string? LogoImagePath
+    {
+        get => _logoImagePath;
+        set { if (_logoImagePath != value) { _logoImagePath = value; OnPropertyChanged(); } }
+    }
+
+    public bool IsInstalled
+    {
+        get => _isInstalled;
+        set { if (_isInstalled != value) { _isInstalled = value; OnPropertyChanged(); } }
+    }
+
+    public long InstallSize
+    {
+        get => _installSize;
+        set { if (_installSize != value) { _installSize = value; OnPropertyChanged(); } }
+    }
+
+    public DateTime? LastPlayed
+    {
+        get => _lastPlayed;
+        set { if (_lastPlayed != value) { _lastPlayed = value; OnPropertyChanged(); } }
+    }
+
+    public TimeSpan TotalPlayTime
+    {
+        get => _totalPlayTime;
+        set { if (_totalPlayTime != value) { _totalPlayTime = value; OnPropertyChanged(); } }
+    }
+
+    public GameState State
+    {
+        get => _state;
+        set { if (_state != value) { _state = value; OnPropertyChanged(); } }
+    }
 }
 
 /// <summary>
