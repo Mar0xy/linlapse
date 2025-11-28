@@ -129,12 +129,14 @@
                 </Button>
 
                 <!-- Game Icons List -->
-                <ListBox Grid.Row="1" 
+                <ListBox x:Name="GameListBox"
+                         Grid.Row="1" 
                          ItemsSource="{Binding Games}"
                          SelectedItem="{Binding SelectedGame}"
                          Background="Transparent"
                          BorderThickness="0"
-                         HorizontalAlignment="Center">
+                         HorizontalAlignment="Center"
+                         SelectionMode="Single">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="models:GameInfo">
                             <Border Width="52" Height="52"
@@ -159,11 +161,11 @@
                                             <MenuItem Header="🗑 Uninstall" 
                                                       Command="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).UninstallGameCommand}"
                                                       CommandParameter="{Binding}"
-                                                      IsVisible="{Binding IsInstalled}"/>
+                                                      IsEnabled="{Binding IsInstalled}"/>
                                             <MenuItem Header="📂 Open Install Folder" 
                                                       Command="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).OpenInstallFolderCommand}"
                                                       CommandParameter="{Binding}"
-                                                      IsVisible="{Binding IsInstalled}"/>
+                                                      IsEnabled="{Binding IsInstalled}"/>
                                         </ContextMenu>
                                     </Border.ContextMenu>
                                     <Panel>
