@@ -112,23 +112,17 @@ public class GameLauncherService
 
             Log.Information("Extracting Jadeite to {Path}", jadeiteDir);
 
-            // Extract jadeite.exe from the zip
-            using (var archive = ZipFile.OpenRead(zipPath))
+            // Extract all files from the zip (jadeite.exe, game_payload.dll, etc.)
+            ZipFile.ExtractToDirectory(zipPath, jadeiteDir, overwriteFiles: true);
+            
+            // Verify that jadeite.exe was extracted
+            if (!File.Exists(jadeitePath))
             {
-                var jadeiteEntry = archive.Entries.FirstOrDefault(e => 
-                    e.Name.Equals(JadeiteExeName, StringComparison.OrdinalIgnoreCase));
-                
-                if (jadeiteEntry != null)
-                {
-                    jadeiteEntry.ExtractToFile(jadeitePath, overwrite: true);
-                    Log.Information("Extracted {File} to {Path}", JadeiteExeName, jadeitePath);
-                }
-                else
-                {
-                    Log.Error("Could not find {File} in the downloaded archive", JadeiteExeName);
-                    return false;
-                }
+                Log.Error("Could not find {File} after extraction", JadeiteExeName);
+                return false;
             }
+            
+            Log.Information("Extracted Jadeite files to {Path}", jadeiteDir);
 
             // Clean up zip file
             File.Delete(zipPath);
