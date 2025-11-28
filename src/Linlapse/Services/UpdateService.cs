@@ -552,7 +552,8 @@ public class UpdateService : IDisposable
                 }
 
                 updateInfo.HasUpdate = !string.IsNullOrEmpty(updateInfo.LatestVersion) &&
-                                       updateInfo.LatestVersion != game.Version;
+                                       !string.IsNullOrEmpty(game.Version) &&
+                                       IsNewerVersion(updateInfo.LatestVersion, game.Version);
 
                 return updateInfo;
             }
@@ -563,6 +564,91 @@ public class UpdateService : IDisposable
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Compare two version strings to determine if the new version is newer than the current version.
+    /// Handles versions like "8.5.0", "7.8.0", "1.0.0.1234", etc.
+    /// </summary>
+    private static bool IsNewerVersion(string newVersion, string currentVersion)
+    {
+        if (string.IsNullOrEmpty(newVersion) || string.IsNullOrEmpty(currentVersion))
+            return false;
+
+        // Try to parse as System.Version first (handles most cases)
+        if (Version.TryParse(NormalizeVersion(newVersion), out var newVer) &&
+            Version.TryParse(NormalizeVersion(currentVersion), out var currentVer))
+        {
+            return newVer > currentVer;
+        }
+
+        // Fallback: compare version parts manually
+        var newParts = newVersion.Split('.', '-', '_');
+        var currentParts = currentVersion.Split('.', '-', '_');
+        var maxLength = Math.Max(newParts.Length, currentParts.Length);
+
+        for (int i = 0; i < maxLength; i++)
+        {
+            var newPart = i < newParts.Length ? newParts[i] : "0";
+            var currentPart = i < currentParts.Length ? currentParts[i] : "0";
+
+            // Try numeric comparison first
+            if (int.TryParse(newPart, out var newNum) && int.TryParse(currentPart, out var currentNum))
+            {
+                if (newNum > currentNum) return true;
+                if (newNum < currentNum) return false;
+            }
+            else
+            {
+                // Fall back to string comparison
+                var comparison = string.Compare(newPart, currentPart, StringComparison.OrdinalIgnoreCase);
+                if (comparison > 0) return true;
+                if (comparison < 0) return false;
+            }
+        }
+
+        return false; // Versions are equal
+    }
+
+    /// <summary>
+    /// Normalize a version string for System.Version parsing
+    /// </summary>
+    private static string NormalizeVersion(string version)
+    {
+        // Remove any non-version prefixes like "v" or "V"
+        version = version.TrimStart('v', 'V');
+        
+        // Split and take only numeric parts separated by dots
+        var parts = version.Split('.');
+        var numericParts = new List<string>();
+        
+        foreach (var part in parts)
+        {
+            // Extract leading numeric portion
+            var numericPart = new string(part.TakeWhile(char.IsDigit).ToArray());
+            if (!string.IsNullOrEmpty(numericPart))
+            {
+                numericParts.Add(numericPart);
+            }
+            else
+            {
+                break; // Stop at first non-numeric part
+            }
+        }
+
+        // System.Version requires at least 2 parts (major.minor)
+        while (numericParts.Count < 2)
+        {
+            numericParts.Add("0");
+        }
+
+        // System.Version supports at most 4 parts
+        if (numericParts.Count > 4)
+        {
+            numericParts = numericParts.Take(4).ToList();
+        }
+
+        return string.Join(".", numericParts);
     }
 
     private async Task<PreloadInfo?> GetPreloadInfoAsync(string gameId, CancellationToken cancellationToken)
