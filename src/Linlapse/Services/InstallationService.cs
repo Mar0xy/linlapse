@@ -110,37 +110,104 @@ public class InstallationService
         await Task.Run(() =>
         {
             using var archive = ZipFile.OpenRead(archivePath);
-            installProgress.TotalFiles = archive.Entries.Count;
-            installProgress.TotalBytes = archive.Entries.Sum(e => e.Length);
+            var entries = archive.Entries.ToList();
+            installProgress.TotalFiles = entries.Count;
+            installProgress.TotalBytes = entries.Sum(e => e.Length);
 
-            foreach (var entry in archive.Entries)
+            // Get the full destination path for security validation
+            var fullDestinationPath = Path.GetFullPath(destinationPath);
+
+            // First pass: create all directories (must be sequential to avoid race conditions)
+            var directories = entries
+                .Where(e => string.IsNullOrEmpty(e.Name))
+                .Select(e => Path.Combine(destinationPath, e.FullName))
+                .Distinct()
+                .ToList();
+
+            foreach (var dir in directories)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
-                var destinationFileName = Path.Combine(destinationPath, entry.FullName);
-
-                // Handle directories
-                if (string.IsNullOrEmpty(entry.Name))
+                
+                // Security: validate directory path
+                var fullDir = Path.GetFullPath(dir);
+                if (!fullDir.StartsWith(fullDestinationPath, StringComparison.Ordinal))
                 {
-                    Directory.CreateDirectory(destinationFileName);
+                    Log.Warning("Skipping potentially malicious directory entry: {Dir}", dir);
                     continue;
                 }
+                Directory.CreateDirectory(dir);
+            }
 
-                // Ensure directory exists
-                var directory = Path.GetDirectoryName(destinationFileName);
-                if (!string.IsNullOrEmpty(directory))
+            // Also pre-create directories for files
+            var fileDirectories = entries
+                .Where(e => !string.IsNullOrEmpty(e.Name))
+                .Select(e => Path.GetDirectoryName(Path.Combine(destinationPath, e.FullName)))
+                .Where(d => !string.IsNullOrEmpty(d))
+                .Distinct()
+                .ToList();
+
+            foreach (var dir in fileDirectories)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                
+                // Security: validate directory path
+                var fullDir = Path.GetFullPath(dir!);
+                if (!fullDir.StartsWith(fullDestinationPath, StringComparison.Ordinal))
                 {
-                    Directory.CreateDirectory(directory);
+                    continue;
+                }
+                Directory.CreateDirectory(dir!);
+            }
+
+            // Second pass: extract files in parallel for better performance
+            var fileEntries = entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
+            var processedFiles = 0;
+            var processedBytes = 0L;
+            var progressLock = new object();
+
+            // Use parallel extraction with degree of parallelism based on CPU cores
+            var parallelOptions = new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount),
+                CancellationToken = cancellationToken
+            };
+
+            Parallel.ForEach(fileEntries, parallelOptions, entry =>
+            {
+                var destinationFileName = Path.Combine(destinationPath, entry.FullName);
+                
+                // Security: validate file path
+                var fullPath = Path.GetFullPath(destinationFileName);
+                if (!fullPath.StartsWith(fullDestinationPath, StringComparison.Ordinal))
+                {
+                    Log.Warning("Skipping potentially malicious archive entry: {Entry}", entry.FullName);
+                    return;
                 }
 
                 entry.ExtractToFile(destinationFileName, overwrite: true);
 
-                installProgress.ProcessedFiles++;
-                installProgress.ProcessedBytes += entry.Length;
-                installProgress.CurrentFile = entry.FullName;
-                progress?.Report(installProgress);
-                InstallProgressChanged?.Invoke(this, installProgress);
-            }
+                lock (progressLock)
+                {
+                    processedFiles++;
+                    processedBytes += entry.Length;
+                    installProgress.ProcessedFiles = processedFiles;
+                    installProgress.ProcessedBytes = processedBytes;
+                    installProgress.CurrentFile = entry.FullName;
+                    
+                    // Report progress less frequently to reduce overhead (every 100 files or every 10MB)
+                    if (processedFiles % 100 == 0 || processedBytes % (10 * 1024 * 1024) < entry.Length)
+                    {
+                        progress?.Report(installProgress);
+                        InstallProgressChanged?.Invoke(this, installProgress);
+                    }
+                }
+            });
+
+            // Final progress report
+            installProgress.ProcessedFiles = processedFiles;
+            installProgress.ProcessedBytes = processedBytes;
+            progress?.Report(installProgress);
+            InstallProgressChanged?.Invoke(this, installProgress);
         }, cancellationToken);
     }
 
@@ -161,6 +228,26 @@ public class InstallationService
             // Get the full path of destination for validation
             var fullDestinationPath = Path.GetFullPath(destinationPath);
 
+            // Pre-create all directories to avoid repeated creation during extraction
+            var directories = fileEntries
+                .Select(e => Path.GetDirectoryName(Path.Combine(destinationPath, e.Key ?? string.Empty)))
+                .Where(d => !string.IsNullOrEmpty(d))
+                .Distinct()
+                .ToList();
+
+            foreach (var dir in directories)
+            {
+                // Security: validate directory path
+                var fullDir = Path.GetFullPath(dir!);
+                if (fullDir.StartsWith(fullDestinationPath, StringComparison.Ordinal))
+                {
+                    Directory.CreateDirectory(dir!);
+                }
+            }
+
+            var lastProgressReport = DateTime.UtcNow;
+            var progressReportInterval = TimeSpan.FromMilliseconds(100); // Report every 100ms
+
             foreach (var entry in fileEntries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -176,13 +263,6 @@ public class InstallationService
                     continue;
                 }
 
-                // Ensure directory exists
-                var directory = Path.GetDirectoryName(destinationFileName);
-                if (!string.IsNullOrEmpty(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
-
                 entry.WriteToFile(destinationFileName, new ExtractionOptions
                 {
                     ExtractFullPath = false,
@@ -192,9 +272,20 @@ public class InstallationService
                 installProgress.ProcessedFiles++;
                 installProgress.ProcessedBytes += entry.Size;
                 installProgress.CurrentFile = entryKey;
-                progress?.Report(installProgress);
-                InstallProgressChanged?.Invoke(this, installProgress);
+                
+                // Rate-limited progress reporting for better performance
+                var now = DateTime.UtcNow;
+                if (now - lastProgressReport >= progressReportInterval)
+                {
+                    progress?.Report(installProgress);
+                    InstallProgressChanged?.Invoke(this, installProgress);
+                    lastProgressReport = now;
+                }
             }
+
+            // Final progress report
+            progress?.Report(installProgress);
+            InstallProgressChanged?.Invoke(this, installProgress);
         }, cancellationToken);
     }
 

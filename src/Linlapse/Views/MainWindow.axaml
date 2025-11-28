@@ -252,6 +252,15 @@
                         </Border.Background>
                     </Border>
                     
+                    <!-- Theme overlay image (shown on top of video backgrounds) - ZIndex 1.5 -->
+                    <Image ZIndex="1"
+                           Source="{Binding ThemeOverlaySource, Converter={StaticResource FilePathToBitmapConverter}}"
+                           Stretch="None"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Bottom"
+                           IsHitTestVisible="False"
+                           IsVisible="{Binding ThemeOverlaySource, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    
                     <!-- Semi-transparent overlay for better text readability over backgrounds - ZIndex 2 -->
                     <Border Background="#000000" Opacity="0.4"
                             ZIndex="2"
