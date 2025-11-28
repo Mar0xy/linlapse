@@ -300,6 +300,9 @@ public class UpdateService : IDisposable
                     // The HDiffPatch library patches: input (old) + diff -> output (new)
                     patcher.Patch(game.InstallPath, tempOutputPath, useBufferedPatch: true, cancellationToken);
 
+                    // Get the full path of install directory for path traversal validation
+                    var fullInstallPath = Path.GetFullPath(game.InstallPath);
+
                     // Move the patched output back to the install path
                     if (Directory.Exists(tempOutputPath))
                     {
@@ -307,7 +310,14 @@ public class UpdateService : IDisposable
                         foreach (var file in Directory.GetFiles(tempOutputPath, "*", SearchOption.AllDirectories))
                         {
                             var relativePath = Path.GetRelativePath(tempOutputPath, file);
-                            var destPath = Path.Combine(game.InstallPath, relativePath);
+                            var destPath = Path.GetFullPath(Path.Combine(game.InstallPath, relativePath));
+                            
+                            // Validate path traversal - ensure destPath stays within install path
+                            if (!destPath.StartsWith(fullInstallPath, StringComparison.Ordinal))
+                            {
+                                Log.Warning("Skipping potentially malicious patch file: {RelativePath}", relativePath);
+                                continue;
+                            }
                             
                             var destDir = Path.GetDirectoryName(destPath);
                             if (!string.IsNullOrEmpty(destDir))

@@ -143,7 +143,11 @@
                                     ToolTip.Tip="{Binding DisplayName}">
                                 <Border.ContextMenu>
                                     <ContextMenu>
-                                        <MenuItem Header="{Binding DisplayName}" IsEnabled="False" FontWeight="Bold"/>
+                                        <MenuItem IsHitTestVisible="False">
+                                            <MenuItem.Header>
+                                                <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" Foreground="#e4e4e7"/>
+                                            </MenuItem.Header>
+                                        </MenuItem>
                                         <Separator/>
                                         <MenuItem Header="🗑 Uninstall" 
                                                   Command="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).UninstallGameCommand}"
