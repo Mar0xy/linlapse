@@ -395,6 +395,70 @@ public class GameLauncherService
     }
 
     /// <summary>
+    /// Get the path to winetricks (downloads if not present)
+    /// </summary>
+    private static string GetWinetricksPath()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return Path.Combine(home, ".local", "share", "linlapse", "winetricks");
+    }
+
+    /// <summary>
+    /// Download winetricks from the official repository
+    /// </summary>
+    private static async Task<bool> EnsureWinetricksDownloadedAsync()
+    {
+        const string winetricksUrl = "https://raw.githubusercontent.com/Winetricks/winetricks/refs/heads/master/src/winetricks";
+        var winetricksPath = GetWinetricksPath();
+
+        // Check if already downloaded
+        if (File.Exists(winetricksPath))
+        {
+            return true;
+        }
+
+        Log.Information("Downloading winetricks from {Url}", winetricksUrl);
+
+        try
+        {
+            // Ensure directory exists
+            var directory = Path.GetDirectoryName(winetricksPath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
+            
+            var content = await httpClient.GetStringAsync(winetricksUrl);
+            await File.WriteAllTextAsync(winetricksPath, content);
+
+            // Make it executable (chmod +x)
+            var chmodProcess = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "chmod",
+                    Arguments = $"+x \"{winetricksPath}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+            chmodProcess.Start();
+            await chmodProcess.WaitForExitAsync();
+
+            Log.Information("Winetricks downloaded successfully to {Path}", winetricksPath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to download winetricks");
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Ensure the wine prefix is initialized with required components
     /// </summary>
     private async Task EnsureWinePrefixInitializedAsync(string winePrefix, string winePath)
@@ -417,27 +481,27 @@ public class GameLauncherService
             await RunWineCommandAsync(winePath, "wineboot", "--init", winePrefix);
             Log.Information("Wine prefix created with wineboot");
 
-            // Step 2: Install required components with winetricks
-            // Check if winetricks is available
-            if (await IsWinetricksAvailableAsync())
+            // Step 2: Download winetricks if needed and install required components
+            if (await EnsureWinetricksDownloadedAsync())
             {
                 Log.Information("Installing wine components with winetricks...");
                 
+                var winetricksPath = GetWinetricksPath();
+                
                 // Install corefonts (required for proper text rendering)
-                await RunWinetricksAsync(winePrefix, "corefonts");
+                await RunWinetricksAsync(winetricksPath, winePrefix, "corefonts");
                 
                 // Install DXVK (DirectX 9/10/11 to Vulkan translation)
-                await RunWinetricksAsync(winePrefix, "dxvk");
+                await RunWinetricksAsync(winetricksPath, winePrefix, "dxvk");
                 
                 // Install VKD3D (DirectX 12 to Vulkan translation)
-                await RunWinetricksAsync(winePrefix, "vkd3d");
+                await RunWinetricksAsync(winetricksPath, winePrefix, "vkd3d");
                 
                 Log.Information("Wine components installed successfully");
             }
             else
             {
-                Log.Warning("winetricks not found. Please install winetricks to get DXVK, VKD3D, and corefonts. " +
-                           "Games may not run correctly without these components.");
+                Log.Warning("Failed to download winetricks. Games may not run correctly without DXVK, VKD3D, and corefonts.");
             }
 
             // Create marker file to indicate prefix is initialized
@@ -448,34 +512,6 @@ public class GameLauncherService
         {
             Log.Error(ex, "Failed to initialize wine prefix: {Prefix}", winePrefix);
             // Don't throw - allow the game to try to launch anyway
-        }
-    }
-
-    /// <summary>
-    /// Check if winetricks is available on the system
-    /// </summary>
-    private static async Task<bool> IsWinetricksAvailableAsync()
-    {
-        try
-        {
-            var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "which",
-                    Arguments = "winetricks",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    CreateNoWindow = true
-                }
-            };
-            process.Start();
-            await process.WaitForExitAsync();
-            return process.ExitCode == 0;
-        }
-        catch
-        {
-            return false;
         }
     }
 
@@ -514,7 +550,7 @@ public class GameLauncherService
     /// <summary>
     /// Run winetricks with the specified prefix and verb
     /// </summary>
-    private static async Task RunWinetricksAsync(string winePrefix, string verb)
+    private static async Task RunWinetricksAsync(string winetricksPath, string winePrefix, string verb)
     {
         Log.Debug("Running winetricks {Verb} for prefix {Prefix}", verb, winePrefix);
         
@@ -522,7 +558,7 @@ public class GameLauncherService
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = "winetricks",
+                FileName = winetricksPath,
                 Arguments = $"-q {verb}",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
