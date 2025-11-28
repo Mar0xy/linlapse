@@ -41,15 +41,15 @@
             <Setter Property="Foreground" Value="#71717a"/>
         </Style>
         <Style Selector="Button.secondary">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="#a1a1aa"/>
+            <Setter Property="Background" Value="#3f3f46"/>
+            <Setter Property="Foreground" Value="White"/>
             <Setter Property="Padding" Value="16,8"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#3f3f46"/>
+            <Setter Property="BorderBrush" Value="#52525b"/>
             <Setter Property="CornerRadius" Value="6"/>
         </Style>
         <Style Selector="Button.secondary:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#27272a"/>
+            <Setter Property="Background" Value="#52525b"/>
         </Style>
         <Style Selector="Button.danger">
             <Setter Property="Background" Value="#dc2626"/>
@@ -417,23 +417,17 @@
                                                 Classes="secondary"
                                                 Command="{Binding PauseDownloadCommand}"
                                                 IsVisible="{Binding !IsPaused}"
-                                                Padding="12,6"
-                                                Background="#3f3f46"
-                                                Foreground="White"/>
+                                                Padding="12,6"/>
                                         <!-- Resume Button (visible when paused) -->
                                         <Button Content="▶ Resume"
                                                 Classes="secondary"
                                                 Command="{Binding ResumeDownloadCommand}"
                                                 IsVisible="{Binding IsPaused}"
-                                                Padding="12,6"
-                                                Background="#3f3f46"
-                                                Foreground="White"/>
+                                                Padding="12,6"/>
                                         <Button Content="Cancel"
                                                 Classes="secondary"
                                                 Command="{Binding CancelDownloadCommand}"
-                                                Padding="12,6"
-                                                Background="#3f3f46"
-                                                Foreground="White"/>
+                                                Padding="12,6"/>
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>
