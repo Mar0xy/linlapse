@@ -423,7 +423,7 @@
 
                             <!-- Preload Button -->
                             <Button Classes="secondary"
-                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    IsVisible="{Binding IsPreloadAvailable}"
                                     Command="{Binding DownloadPreloadCommand}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="📥"/>

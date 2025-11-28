@@ -154,15 +154,23 @@ public class InstallationService
         await Task.Run(() =>
         {
             using var archive = ArchiveFactory.Open(archivePath);
-            var entries = archive.Entries.Where(e => !e.IsDirectory).ToList();
-            installProgress.TotalFiles = entries.Count;
-            installProgress.TotalBytes = entries.Sum(e => e.Size);
+            var fileEntries = archive.Entries.Where(e => !e.IsDirectory).ToList();
+            installProgress.TotalFiles = fileEntries.Count;
+            installProgress.TotalBytes = fileEntries.Sum(e => e.Size);
 
             foreach (var entry in archive.Entries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var destinationFileName = Path.Combine(destinationPath, entry.Key ?? string.Empty);
+                // Validate entry key to prevent path traversal attacks
+                var entryKey = entry.Key ?? string.Empty;
+                if (entryKey.Contains("..") || Path.IsPathRooted(entryKey))
+                {
+                    Log.Warning("Skipping potentially malicious archive entry: {EntryKey}", entryKey);
+                    continue;
+                }
+
+                var destinationFileName = Path.Combine(destinationPath, entryKey);
 
                 // Handle directories
                 if (entry.IsDirectory)
@@ -186,7 +194,7 @@ public class InstallationService
 
                 installProgress.ProcessedFiles++;
                 installProgress.ProcessedBytes += entry.Size;
-                installProgress.CurrentFile = entry.Key ?? string.Empty;
+                installProgress.CurrentFile = entryKey;
                 progress?.Report(installProgress);
                 InstallProgressChanged?.Invoke(this, installProgress);
             }

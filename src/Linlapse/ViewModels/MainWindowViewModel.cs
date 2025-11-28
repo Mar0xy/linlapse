@@ -54,6 +54,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private UpdateInfo? _availableUpdate;
 
     [ObservableProperty]
+    private bool _isPreloadAvailable;
+
+    [ObservableProperty]
     private CacheInfo? _cacheInfo;
 
     [ObservableProperty]
@@ -470,6 +473,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             StatusMessage = $"Checking for updates...";
             AvailableUpdate = await _updateService.CheckForUpdatesAsync(SelectedGame.Id);
+            IsPreloadAvailable = !string.IsNullOrEmpty(AvailableUpdate?.PreloadVersion);
 
             if (AvailableUpdate?.HasUpdate == true)
             {
@@ -484,6 +488,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             Log.Error(ex, "Update check failed");
             StatusMessage = "Failed to check for updates";
+            IsPreloadAvailable = false;
         }
     }
 
@@ -526,6 +531,7 @@ public partial class MainWindowViewModel : ViewModelBase
             IsDownloading = false;
             ProgressPercent = 0;
             AvailableUpdate = null;
+            IsPreloadAvailable = false;
         }
     }
 
@@ -721,6 +727,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsGameRunning = _launcherService.IsGameRunning(value.Id);
             AvailableUpdate = null;
+            IsPreloadAvailable = false;
             CacheInfo = null;
             DownloadInfo = null;
             DownloadSizeText = string.Empty;
