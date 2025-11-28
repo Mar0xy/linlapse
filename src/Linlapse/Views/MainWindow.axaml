@@ -41,15 +41,15 @@
             <Setter Property="Foreground" Value="#71717a"/>
         </Style>
         <Style Selector="Button.secondary">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="#a1a1aa"/>
+            <Setter Property="Background" Value="#3f3f46"/>
+            <Setter Property="Foreground" Value="White"/>
             <Setter Property="Padding" Value="16,8"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#3f3f46"/>
+            <Setter Property="BorderBrush" Value="#52525b"/>
             <Setter Property="CornerRadius" Value="6"/>
         </Style>
         <Style Selector="Button.secondary:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#27272a"/>
+            <Setter Property="Background" Value="#52525b"/>
         </Style>
         <Style Selector="Button.danger">
             <Setter Property="Background" Value="#dc2626"/>
@@ -60,69 +60,112 @@
         <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="#ef4444"/>
         </Style>
-        <Style Selector="ListBoxItem">
-            <Setter Property="Padding" Value="16,12"/>
-            <Setter Property="Margin" Value="0,2"/>
-            <Setter Property="CornerRadius" Value="8"/>
+        <Style Selector="Button.icon-button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#a1a1aa"/>
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
-        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+        <Style Selector="Button.icon-button:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="#3b3b5c"/>
         </Style>
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
         <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#2a2a40"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ContextMenu">
+            <Setter Property="Background" Value="#27272a"/>
+            <Setter Property="BorderBrush" Value="#3f3f46"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="4"/>
+        </Style>
+        <Style Selector="MenuItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#e4e4e7"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="MenuItem:pointerover /template/ Border#PART_LayoutRoot">
+            <Setter Property="Background" Value="#3f3f46"/>
+        </Style>
+        <Style Selector="MenuItem:disabled">
+            <Setter Property="Foreground" Value="#71717a"/>
+        </Style>
+        <Style Selector="Separator">
+            <Setter Property="Background" Value="#3f3f46"/>
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Margin" Value="8,4"/>
         </Style>
     </Window.Styles>
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="72"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Sidebar -->
-        <Border Grid.Column="0" Background="#16162a" Padding="16">
-            <Grid RowDefinitions="Auto,Auto,*,Auto">
-                <!-- Logo/Title -->
-                <StackPanel Grid.Row="0" Margin="0,0,0,16">
-                    <TextBlock Text="🎮 Linlapse" 
-                               FontSize="24" 
-                               FontWeight="Bold" 
-                               Foreground="White"/>
-                    <TextBlock Text="Linux Game Launcher"
-                               FontSize="12"
-                               Foreground="#71717a"
-                               Margin="0,4,0,0"/>
-                </StackPanel>
+        <!-- Sidebar - Icon Only -->
+        <Border Grid.Column="0" Background="#16162a" Padding="8">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <!-- Logo Icon -->
+                <Button Grid.Row="0" 
+                        Classes="icon-button"
+                        Margin="0,8,0,16"
+                        HorizontalAlignment="Center"
+                        ToolTip.Tip="Linlapse - Linux Game Launcher">
+                    <TextBlock Text="🎮" FontSize="28" HorizontalAlignment="Center"/>
+                </Button>
 
-                <!-- Region Selector -->
-                <Border Grid.Row="1" Background="#27272a" CornerRadius="8" Padding="12" Margin="0,0,0,16">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Region" FontSize="12" Foreground="#a1a1aa"/>
-                        <ComboBox ItemsSource="{Binding AvailableRegions}"
-                                  SelectedItem="{Binding SelectedRegion}"
-                                  HorizontalAlignment="Stretch"
-                                  Background="#3f3f46"
-                                  Foreground="White"
-                                  BorderBrush="#52525b"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Game List -->
-                <ListBox Grid.Row="2" 
+                <!-- Game Icons List -->
+                <ListBox Grid.Row="1" 
                          ItemsSource="{Binding Games}"
                          SelectedItem="{Binding SelectedGame}"
                          Background="Transparent"
-                         BorderThickness="0">
+                         BorderThickness="0"
+                         HorizontalAlignment="Center">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="models:GameInfo">
-                            <Grid ColumnDefinitions="Auto,*,Auto">
-                                <Border Grid.Column="0"
-                                        Width="40" Height="40"
-                                        CornerRadius="8"
+                            <Border Width="52" Height="52"
+                                    CornerRadius="14"
+                                    BorderThickness="2"
+                                    BorderBrush="Transparent"
+                                    Background="Transparent"
+                                    Margin="0,2">
+                                <Border Width="48" Height="48"
+                                        CornerRadius="12"
                                         Background="#3b3b5c"
                                         ClipToBounds="True"
-                                        Margin="0,0,12,0">
-                                    <!-- Show game icon if available, otherwise show emoji -->
+                                        ToolTip.Tip="{Binding DisplayName}">
+                                    <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem IsHitTestVisible="False">
+                                                <MenuItem.Header>
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" Foreground="#e4e4e7"/>
+                                                </MenuItem.Header>
+                                            </MenuItem>
+                                            <Separator/>
+                                            <MenuItem Header="🗑 Uninstall" 
+                                                      Command="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).UninstallGameCommand}"
+                                                      CommandParameter="{Binding}"
+                                                      IsVisible="{Binding IsInstalled}"/>
+                                            <MenuItem Header="📂 Open Install Folder" 
+                                                      Command="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).OpenInstallFolderCommand}"
+                                                      CommandParameter="{Binding}"
+                                                      IsVisible="{Binding IsInstalled}"/>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
                                     <Panel>
                                         <Image Source="{Binding LogoImagePath, Converter={StaticResource FilePathToBitmapConverter}}"
                                                Stretch="UniformToFill"
@@ -130,50 +173,50 @@
                                         <TextBlock Text="🎯" 
                                                    VerticalAlignment="Center"
                                                    HorizontalAlignment="Center"
-                                                   FontSize="18"
+                                                   FontSize="20"
                                                    IsVisible="{Binding LogoImagePath, Converter={x:Static StringConverters.IsNullOrEmpty}}"/>
+                                        <!-- Installed indicator -->
+                                        <Border IsVisible="{Binding IsInstalled}"
+                                                Background="#22c55e"
+                                                CornerRadius="6"
+                                                Width="12" Height="12"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,2,2">
+                                            <TextBlock Text="✓" FontSize="8" Foreground="White" 
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
                                     </Panel>
                                 </Border>
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding DisplayName}"
-                                               FontWeight="SemiBold"
-                                               Foreground="White"/>
-                                    <TextBlock FontSize="11" Foreground="#71717a">
-                                        <TextBlock.Text>
-                                            <MultiBinding StringFormat="{}{0} • {1}">
-                                                <Binding Path="Region"/>
-                                                <Binding Path="State"/>
-                                            </MultiBinding>
-                                        </TextBlock.Text>
-                                    </TextBlock>
-                                </StackPanel>
-                                <Border Grid.Column="2"
-                                        IsVisible="{Binding IsInstalled}"
-                                        Background="#22c55e"
-                                        CornerRadius="4"
-                                        Padding="6,2">
-                                    <TextBlock Text="✓" FontSize="10" Foreground="White"/>
-                                </Border>
-                            </Grid>
+                            </Border>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
+                    <ListBox.Styles>
+                        <Style Selector="ListBoxItem:selected Border">
+                            <Setter Property="BorderBrush" Value="#6366f1"/>
+                        </Style>
+                    </ListBox.Styles>
                 </ListBox>
 
-                <!-- Bottom Actions -->
-                <StackPanel Grid.Row="3" Spacing="8">
-                    <Button Content="⚙ Settings" 
-                            Classes="secondary"
-                            HorizontalAlignment="Stretch"
-                            Command="{Binding ToggleSettingsCommand}"/>
-                    <Button Content="⟳ Refresh Games" 
-                            Classes="secondary"
-                            HorizontalAlignment="Stretch"
-                            Command="{Binding RefreshGamesCommand}"/>
-                    <TextBlock Text="{Binding WineVersion}"
-                               FontSize="11"
-                               Foreground="#52525b"
-                               TextWrapping="Wrap"
-                               Margin="0,8,0,0"/>
+                <!-- Bottom Action Icons -->
+                <StackPanel Grid.Row="2" Spacing="8" HorizontalAlignment="Center">
+                    <Button Classes="icon-button"
+                            Width="48" Height="48"
+                            Command="{Binding ToggleSettingsCommand}"
+                            ToolTip.Tip="Settings">
+                        <TextBlock Text="⚙" FontSize="22" HorizontalAlignment="Center"/>
+                    </Button>
+                    <Button Classes="icon-button"
+                            Width="48" Height="48"
+                            Command="{Binding RefreshGamesCommand}"
+                            ToolTip.Tip="Refresh Games">
+                        <TextBlock Text="⟳" FontSize="22" HorizontalAlignment="Center"/>
+                    </Button>
+                    <Button Classes="icon-button"
+                            Width="48" Height="48"
+                            ToolTip.Tip="{Binding WineVersion}">
+                        <TextBlock Text="🍷" FontSize="22" HorizontalAlignment="Center"/>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>
@@ -281,47 +324,61 @@
                                 </Grid>
                             </Border>
 
-                            <!-- Download Info for non-installed games -->
-                            <Border Background="#1e3a5f" 
-                                    CornerRadius="8" 
-                                    Padding="16,12"
-                                    Margin="0,16,0,0"
-                                    IsVisible="{Binding DownloadInfo, Converter={x:Static ObjectConverters.IsNotNull}}">
-                                <StackPanel>
-                                    <TextBlock Text="Download Information" FontWeight="SemiBold" Foreground="#93c5fd" Margin="0,0,0,8"/>
-                                    <TextBlock Foreground="#71717a" FontSize="12">
-                                        <Run Text="Version: "/>
-                                        <Run Text="{Binding DownloadInfo.Version}" Foreground="#93c5fd"/>
-                                    </TextBlock>
-                                    <TextBlock Foreground="#71717a" FontSize="12" Margin="0,4,0,0">
-                                        <Run Text="Size: "/>
-                                        <Run Text="{Binding DownloadSizeText}" Foreground="#93c5fd"/>
-                                    </TextBlock>
-                                    <TextBlock Foreground="#71717a" FontSize="12" Margin="0,4,0,0"
-                                               IsVisible="{Binding DownloadInfo.VoicePacks.Count}">
-                                        <Run Text="Voice packs available: "/>
-                                        <Run Text="{Binding DownloadInfo.VoicePacks.Count}" Foreground="#93c5fd"/>
-                                    </TextBlock>
-                                </StackPanel>
-                            </Border>
+                            <!-- Info Cards Container - Limited Width -->
+                            <StackPanel Margin="0,16,0,0" MaxWidth="400" HorizontalAlignment="Left" Spacing="12">
+                                <!-- Download Info for non-installed games -->
+                                <Border Background="#1e3a5fDD" 
+                                        CornerRadius="8" 
+                                        Padding="16,12"
+                                        IsVisible="{Binding DownloadInfo, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                    <StackPanel>
+                                        <TextBlock Text="Download Information" FontWeight="SemiBold" Foreground="#93c5fd" Margin="0,0,0,8"/>
+                                        <TextBlock Foreground="#a1a1aa" FontSize="12">
+                                            <Run Text="Version: "/>
+                                            <Run Text="{Binding DownloadInfo.Version}" Foreground="#93c5fd"/>
+                                        </TextBlock>
+                                        <TextBlock Foreground="#a1a1aa" FontSize="12" Margin="0,4,0,0">
+                                            <Run Text="Size: "/>
+                                            <Run Text="{Binding DownloadSizeText}" Foreground="#93c5fd"/>
+                                        </TextBlock>
+                                        <TextBlock Foreground="#a1a1aa" FontSize="12" Margin="0,4,0,0"
+                                                   IsVisible="{Binding DownloadInfo.VoicePacks.Count}">
+                                            <Run Text="Voice packs available: "/>
+                                            <Run Text="{Binding DownloadInfo.VoicePacks.Count}" Foreground="#93c5fd"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
 
-                            <!-- Cache Info -->
-                            <Border Background="#27272a" 
-                                    CornerRadius="8" 
-                                    Padding="16,12"
-                                    Margin="0,16,0,0"
-                                    IsVisible="{Binding CacheInfo, Converter={x:Static ObjectConverters.IsNotNull}}">
-                                <StackPanel>
-                                    <TextBlock Text="Cache Information" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
-                                    <TextBlock Foreground="#71717a" FontSize="12">
-                                        <Run Text="Total cache size: "/>
-                                        <Run Text="{Binding CacheInfo.TotalSize, StringFormat='{}{0:N0} bytes'}" Foreground="#a1a1aa"/>
-                                        <Run Text=" ("/>
-                                        <Run Text="{Binding CacheInfo.TotalFiles}" Foreground="#a1a1aa"/>
-                                        <Run Text=" files)"/>
-                                    </TextBlock>
-                                </StackPanel>
-                            </Border>
+                                <!-- Region Selector -->
+                                <Border Background="#27272aDD" CornerRadius="8" Padding="16,12">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Text="Region" FontSize="12" FontWeight="SemiBold" Foreground="White"/>
+                                        <ComboBox ItemsSource="{Binding AvailableRegions}"
+                                                  SelectedItem="{Binding SelectedRegion}"
+                                                  HorizontalAlignment="Stretch"
+                                                  Background="#3f3f46"
+                                                  Foreground="White"
+                                                  BorderBrush="#52525b"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Cache Info -->
+                                <Border Background="#27272aDD" 
+                                        CornerRadius="8" 
+                                        Padding="16,12"
+                                        IsVisible="{Binding CacheInfo, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                    <StackPanel>
+                                        <TextBlock Text="Cache Information" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+                                        <TextBlock Foreground="#a1a1aa" FontSize="12">
+                                            <Run Text="Total cache size: "/>
+                                            <Run Text="{Binding CacheInfo.TotalSize, StringFormat='{}{0:N0} bytes'}" Foreground="#a1a1aa"/>
+                                            <Run Text=" ("/>
+                                            <Run Text="{Binding CacheInfo.TotalFiles}" Foreground="#a1a1aa"/>
+                                            <Run Text=" files)"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
                             
                             <TextBlock Text="{Binding SelectedGame.InstallPath}"
                                        IsVisible="{Binding SelectedGame.IsInstalled}"
@@ -331,33 +388,60 @@
                         </StackPanel>
 
                         <!-- Progress Bar -->
-                        <StackPanel Grid.Row="1" 
-                                    Margin="0,16,0,0"
-                                    IsVisible="{Binding IsDownloading}">
-                            <ProgressBar Value="{Binding ProgressPercent}"
-                                         Maximum="100"
-                                         Height="8"
-                                         CornerRadius="4"
-                                         Background="#3f3f46"
-                                         Foreground="#6366f1"/>
-                            <Grid Margin="0,8,0,0">
-                                <TextBlock Text="{Binding ProgressText}"
-                                           Foreground="#a1a1aa"
-                                           FontSize="12"/>
-                                <Button Content="Cancel"
-                                        Classes="secondary"
-                                        HorizontalAlignment="Right"
-                                        Command="{Binding CancelDownloadCommand}"
-                                        Padding="8,4"/>
-                            </Grid>
-                        </StackPanel>
+                        <Border Grid.Row="1" 
+                                Background="#1a1a2eEE"
+                                CornerRadius="8"
+                                Padding="16,12"
+                                Margin="0,16,0,0"
+                                MinWidth="500"
+                                MaxWidth="600"
+                                HorizontalAlignment="Right"
+                                BoxShadow="0 4 16 0 #000000AA"
+                                IsVisible="{Binding IsSelectedGameDownloading}">
+                            <StackPanel Spacing="12">
+                                <ProgressBar Value="{Binding ProgressPercent}"
+                                             Maximum="100"
+                                             Height="8"
+                                             CornerRadius="4"
+                                             Background="#3f3f46"
+                                             Foreground="#6366f1"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding ProgressText}"
+                                               Foreground="White"
+                                               FontSize="13"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1"
+                                                Orientation="Horizontal" 
+                                                Spacing="8">
+                                        <!-- Pause Button (visible when not paused) -->
+                                        <Button Content="⏸ Pause"
+                                                Classes="secondary"
+                                                Command="{Binding PauseDownloadCommand}"
+                                                IsVisible="{Binding !IsPaused}"
+                                                Padding="12,6"/>
+                                        <!-- Resume Button (visible when paused) -->
+                                        <Button Content="▶ Resume"
+                                                Classes="secondary"
+                                                Command="{Binding ResumeDownloadCommand}"
+                                                IsVisible="{Binding IsPaused}"
+                                                Padding="12,6"/>
+                                        <Button Content="Cancel"
+                                                Classes="secondary"
+                                                Command="{Binding CancelDownloadCommand}"
+                                                Padding="12,6"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
 
                         <!-- Action Buttons -->
-                        <StackPanel Grid.Row="2" 
+                        <StackPanel Grid.Row="2"
                                     Orientation="Horizontal" 
                                     Spacing="12"
                                     Margin="0,16,0,0"
-                                    HorizontalAlignment="Left">
+                                    HorizontalAlignment="Right">
                             <!-- Launch Button (for installed games) -->
                             <Button Classes="primary"
                                     Command="{Binding LaunchGameCommand}"
@@ -373,7 +457,7 @@
                             <Button Classes="primary"
                                     Command="{Binding InstallGameCommand}"
                                     IsVisible="{Binding !SelectedGame.IsInstalled}"
-                                    IsEnabled="{Binding !IsDownloading}">
+                                    IsEnabled="{Binding !IsSelectedGameDownloading}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="📥"/>
                                     <TextBlock Text="Install Game"/>
@@ -423,7 +507,7 @@
 
                             <!-- Preload Button -->
                             <Button Classes="secondary"
-                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    IsVisible="{Binding IsPreloadAvailable}"
                                     Command="{Binding DownloadPreloadCommand}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="📥"/>
@@ -439,7 +523,7 @@
                                 VerticalAlignment="Center"
                                 HorizontalAlignment="Center">
                         <TextBlock Text="🎮" FontSize="64" HorizontalAlignment="Center"/>
-                        <TextBlock Text="Select a game from the sidebar"
+                        <TextBlock Text="Select a game"
                                    FontSize="18"
                                    Foreground="#71717a"
                                    Margin="0,16,0,0"/>

@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text.Json;
 using Linlapse.Models;
 using Serilog;
+using SharpHDiffPatch.Core;
 
 namespace Linlapse.Services;
 
@@ -247,7 +248,7 @@ public class UpdateService : IDisposable
         {
             var patchDir = Path.Combine(SettingsService.GetCacheDirectory(), "patches", game.Id);
             Directory.CreateDirectory(patchDir);
-            var patchPath = Path.Combine(patchDir, "delta.patch");
+            var patchPath = Path.Combine(patchDir, "delta.hdiff");
 
             // Download patch
             var downloadProgress = new Progress<DownloadProgress>(dp =>
@@ -268,19 +269,104 @@ public class UpdateService : IDisposable
             if (!downloadSuccess)
                 return false;
 
-            // Apply patch
+            // Apply HDiff patch
             updateProgress.State = UpdateState.ApplyingPatch;
             progress?.Report(updateProgress);
 
-            // Note: In a full implementation, you would use HDiffPatch or similar
-            // For now, we'll extract as if it's a zip
             await Task.Run(() =>
             {
-                // Patch application logic would go here
-                Log.Information("Delta patch applied for {GameId}", game.Id);
+                // Create a temporary output path for the patched result
+                var tempOutputPath = Path.Combine(patchDir, "patched_output");
+                EventHandler<SharpHDiffPatch.Core.Event.PatchEvent>? patchEventHandler = null;
+
+                try
+                {
+                    // Check for cancellation before starting
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Initialize HDiff patcher with the diff file
+                    var patcher = new HDiffPatch();
+                    patcher.Initialize(patchPath);
+                    
+                    // Set up progress callback via EventListener
+                    patchEventHandler = (sender, e) =>
+                    {
+                        updateProgress.ProcessedBytes = e.CurrentSizePatched;
+                        updateProgress.TotalBytes = e.TotalSizeToBePatched;
+                        updateProgress.SpeedBytesPerSecond = e.Speed;
+                        progress?.Report(updateProgress);
+                        UpdateProgressChanged?.Invoke(this, updateProgress);
+                    };
+                    SharpHDiffPatch.Core.EventListener.PatchEvent += patchEventHandler;
+
+                    // Apply the patch
+                    // The HDiffPatch library patches: input (old) + diff -> output (new)
+                    patcher.Patch(game.InstallPath, tempOutputPath, useBufferedPatch: true, cancellationToken);
+
+                    // Check for cancellation after patch completes
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Get the full path of install directory for path traversal validation
+                    var fullInstallPath = Path.GetFullPath(game.InstallPath);
+
+                    // Move the patched output back to the install path
+                    if (Directory.Exists(tempOutputPath))
+                    {
+                        // Directory output - move all files back to install path
+                        foreach (var file in Directory.GetFiles(tempOutputPath, "*", SearchOption.AllDirectories))
+                        {
+                            // Check for cancellation during file operations
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            var relativePath = Path.GetRelativePath(tempOutputPath, file);
+                            var destPath = Path.GetFullPath(Path.Combine(game.InstallPath, relativePath));
+                            
+                            // Validate path traversal - ensure destPath stays within install path
+                            if (!destPath.StartsWith(fullInstallPath, StringComparison.Ordinal))
+                            {
+                                Log.Warning("Skipping potentially malicious patch file: {RelativePath}", relativePath);
+                                continue;
+                            }
+                            
+                            var destDir = Path.GetDirectoryName(destPath);
+                            if (!string.IsNullOrEmpty(destDir))
+                            {
+                                Directory.CreateDirectory(destDir);
+                            }
+                            
+                            File.Move(file, destPath, overwrite: true);
+                        }
+                    }
+                    else if (File.Exists(tempOutputPath))
+                    {
+                        // Single file output - this shouldn't happen for game updates
+                        // but handle it just in case
+                        Log.Warning("Unexpected single file patch result for {GameId}", game.Id);
+                    }
+
+                    Log.Information("Delta patch applied successfully for {GameId}", game.Id);
+                }
+                finally
+                {
+                    // Unsubscribe from event to prevent memory leaks
+                    if (patchEventHandler != null)
+                    {
+                        SharpHDiffPatch.Core.EventListener.PatchEvent -= patchEventHandler;
+                    }
+
+                    // Cleanup temp output
+                    try 
+                    { 
+                        if (File.Exists(tempOutputPath))
+                            File.Delete(tempOutputPath);
+                        if (Directory.Exists(tempOutputPath))
+                            Directory.Delete(tempOutputPath, recursive: true); 
+                    } 
+                    catch { }
+                }
             }, cancellationToken);
 
-            // Cleanup
+            // Cleanup patch file
             try { File.Delete(patchPath); } catch { }
 
             return true;
@@ -456,7 +542,8 @@ public class UpdateService : IDisposable
                     }
                 }
 
-                if (data.TryGetProperty("pre_download_game", out var preload))
+                if (data.TryGetProperty("pre_download_game", out var preload) && 
+                    preload.ValueKind != JsonValueKind.Null)
                 {
                     if (preload.TryGetProperty("latest", out var preloadLatest))
                     {

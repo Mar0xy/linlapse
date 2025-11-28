@@ -2,6 +2,8 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using Linlapse.Models;
 using Serilog;
+using SharpCompress.Archives;
+using SharpCompress.Common;
 
 namespace Linlapse.Services;
 
@@ -64,6 +66,9 @@ public class InstallationService
             {
                 case ".zip":
                     await ExtractZipAsync(archivePath, installPath, installProgress, progress, cancellationToken);
+                    break;
+                case ".7z":
+                    await Extract7zAsync(archivePath, installPath, installProgress, progress, cancellationToken);
                     break;
                 default:
                     throw new NotSupportedException($"Archive format not supported: {extension}");
@@ -133,6 +138,60 @@ public class InstallationService
                 installProgress.ProcessedFiles++;
                 installProgress.ProcessedBytes += entry.Length;
                 installProgress.CurrentFile = entry.FullName;
+                progress?.Report(installProgress);
+                InstallProgressChanged?.Invoke(this, installProgress);
+            }
+        }, cancellationToken);
+    }
+
+    private async Task Extract7zAsync(
+        string archivePath,
+        string destinationPath,
+        InstallProgress installProgress,
+        IProgress<InstallProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        await Task.Run(() =>
+        {
+            using var archive = ArchiveFactory.Open(archivePath);
+            var fileEntries = archive.Entries.Where(e => !e.IsDirectory).ToList();
+            installProgress.TotalFiles = fileEntries.Count;
+            installProgress.TotalBytes = fileEntries.Sum(e => e.Size);
+
+            // Get the full path of destination for validation
+            var fullDestinationPath = Path.GetFullPath(destinationPath);
+
+            foreach (var entry in fileEntries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var entryKey = entry.Key ?? string.Empty;
+                
+                // Validate entry key to prevent path traversal attacks
+                // Use case-sensitive comparison (Ordinal) for proper security on Linux file systems
+                var destinationFileName = Path.GetFullPath(Path.Combine(destinationPath, entryKey));
+                if (!destinationFileName.StartsWith(fullDestinationPath, StringComparison.Ordinal))
+                {
+                    Log.Warning("Skipping potentially malicious archive entry: {EntryKey}", entryKey);
+                    continue;
+                }
+
+                // Ensure directory exists
+                var directory = Path.GetDirectoryName(destinationFileName);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                entry.WriteToFile(destinationFileName, new ExtractionOptions
+                {
+                    ExtractFullPath = false,
+                    Overwrite = true
+                });
+
+                installProgress.ProcessedFiles++;
+                installProgress.ProcessedBytes += entry.Size;
+                installProgress.CurrentFile = entryKey;
                 progress?.Report(installProgress);
                 InstallProgressChanged?.Invoke(this, installProgress);
             }

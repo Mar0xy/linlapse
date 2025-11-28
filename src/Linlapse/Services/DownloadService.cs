@@ -14,11 +14,15 @@ public class DownloadService : IDisposable
     private readonly HttpClient _httpClient;
     private readonly SettingsService _settingsService;
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeDownloads = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _pauseSemaphores = new();
+    private readonly ConcurrentDictionary<string, bool> _isPaused = new();
     private readonly SemaphoreSlim _downloadSemaphore;
 
     public event EventHandler<DownloadProgress>? DownloadProgressChanged;
     public event EventHandler<string>? DownloadCompleted;
     public event EventHandler<(string FileName, Exception Error)>? DownloadFailed;
+    public event EventHandler<string>? DownloadPaused;
+    public event EventHandler<string>? DownloadResumed;
 
     public DownloadService(SettingsService settingsService)
     {
@@ -29,7 +33,7 @@ public class DownloadService : IDisposable
     }
 
     /// <summary>
-    /// Download a file with progress reporting and resume support
+    /// Download a file with progress reporting, pause, and resume support
     /// </summary>
     public async Task<bool> DownloadFileAsync(
         string url,
@@ -40,6 +44,9 @@ public class DownloadService : IDisposable
         var fileName = Path.GetFileName(destinationPath);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _activeDownloads[fileName] = cts;
+        var pauseSemaphore = new SemaphoreSlim(1, 1); // Initially not paused (1 available)
+        _pauseSemaphores[fileName] = pauseSemaphore;
+        _isPaused[fileName] = false;
 
         try
         {
@@ -104,6 +111,23 @@ public class DownloadService : IDisposable
 
             while ((bytesRead = await contentStream.ReadAsync(buffer, cts.Token)) > 0)
             {
+                // Check if paused - wait asynchronously until resumed or cancelled
+                if (_isPaused.TryGetValue(fileName, out var isPaused) && isPaused)
+                {
+                    downloadProgress.State = DownloadState.Paused;
+                    progress?.Report(downloadProgress);
+                    DownloadProgressChanged?.Invoke(this, downloadProgress);
+                    
+                    // Wait for resume signal asynchronously
+                    await pauseSemaphore.WaitAsync(cts.Token);
+                    pauseSemaphore.Release(); // Release immediately, we just needed to wait
+                    
+                    downloadProgress.State = DownloadState.Downloading;
+                    // Reset timing for accurate speed calculation after resume
+                    startTime = DateTime.UtcNow;
+                    bytesAtStart = downloadProgress.BytesDownloaded;
+                }
+
                 await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cts.Token);
                 downloadProgress.BytesDownloaded += bytesRead;
 
@@ -167,6 +191,11 @@ public class DownloadService : IDisposable
         finally
         {
             _activeDownloads.TryRemove(fileName, out _);
+            _isPaused.TryRemove(fileName, out _);
+            if (_pauseSemaphores.TryRemove(fileName, out var removedSemaphore))
+            {
+                removedSemaphore.Dispose();
+            }
             _downloadSemaphore.Release();
         }
     }
@@ -204,10 +233,104 @@ public class DownloadService : IDisposable
     }
 
     /// <summary>
+    /// Pause a specific download
+    /// </summary>
+    public void PauseDownload(string fileName)
+    {
+        if (_pauseSemaphores.TryGetValue(fileName, out var semaphore))
+        {
+            _isPaused[fileName] = true;
+            // Take the semaphore to block the download loop
+            semaphore.Wait(0); // Non-blocking take if available
+            DownloadPaused?.Invoke(this, fileName);
+            Log.Information("Download paused: {FileName}", fileName);
+        }
+    }
+
+    /// <summary>
+    /// Resume a specific download
+    /// </summary>
+    public void ResumeDownload(string fileName)
+    {
+        if (_pauseSemaphores.TryGetValue(fileName, out var semaphore))
+        {
+            _isPaused[fileName] = false;
+            // Release the semaphore to unblock the download loop
+            try
+            {
+                semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Already released, ignore
+            }
+            DownloadResumed?.Invoke(this, fileName);
+            Log.Information("Download resumed: {FileName}", fileName);
+        }
+    }
+
+    /// <summary>
+    /// Pause all active downloads
+    /// </summary>
+    public void PauseAllDownloads()
+    {
+        foreach (var kvp in _pauseSemaphores)
+        {
+            _isPaused[kvp.Key] = true;
+            kvp.Value.Wait(0); // Non-blocking take if available
+            DownloadPaused?.Invoke(this, kvp.Key);
+        }
+    }
+
+    /// <summary>
+    /// Resume all paused downloads
+    /// </summary>
+    public void ResumeAllDownloads()
+    {
+        foreach (var kvp in _pauseSemaphores)
+        {
+            _isPaused[kvp.Key] = false;
+            try
+            {
+                kvp.Value.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Already released, ignore
+            }
+            DownloadResumed?.Invoke(this, kvp.Key);
+        }
+    }
+
+    /// <summary>
+    /// Check if a download is currently paused
+    /// </summary>
+    public bool IsDownloadPaused(string fileName)
+    {
+        return _isPaused.TryGetValue(fileName, out var isPaused) && isPaused;
+    }
+
+    /// <summary>
     /// Cancel a specific download
     /// </summary>
     public void CancelDownload(string fileName)
     {
+        // Resume first if paused, so the cancellation can be processed.
+        // Note: There may be a brief window where some data is processed before
+        // the cancellation token is checked, but this is acceptable as the
+        // partial data is saved and can be resumed later.
+        if (_pauseSemaphores.TryGetValue(fileName, out var semaphore))
+        {
+            _isPaused[fileName] = false;
+            try
+            {
+                semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Already released, ignore
+            }
+        }
         if (_activeDownloads.TryGetValue(fileName, out var cts))
         {
             cts.Cancel();
@@ -219,6 +342,19 @@ public class DownloadService : IDisposable
     /// </summary>
     public void CancelAllDownloads()
     {
+        // Resume all first so cancellations can be processed
+        foreach (var kvp in _pauseSemaphores)
+        {
+            _isPaused[kvp.Key] = false;
+            try
+            {
+                kvp.Value.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Already released, ignore
+            }
+        }
         foreach (var cts in _activeDownloads.Values)
         {
             cts.Cancel();
