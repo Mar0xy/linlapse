@@ -283,10 +283,10 @@ public class GameDownloadService : IDisposable
                 }
             }
 
-            // Update game info
+            // Update game info - UpdateGameInstallPath will set the state based on whether
+            // the game executable exists
             _gameService.UpdateGameInstallPath(gameId, installPath);
             game.Version = downloadInfo.Version;
-            _gameService.UpdateGameState(gameId, GameState.Ready);
 
             // Cleanup temp files
             downloadProgress.State = GameDownloadState.Cleanup;

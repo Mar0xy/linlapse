@@ -81,9 +81,9 @@ public partial class InstallationService
                     throw new NotSupportedException($"Archive format not supported: {extension}");
             }
 
-            // Update game info
+            // Update game info - UpdateGameInstallPath will set the state based on whether
+            // the game executable exists
             _gameService.UpdateGameInstallPath(gameId, installPath);
-            _gameService.UpdateGameState(gameId, GameState.Ready);
 
             installProgress.State = InstallState.Completed;
             progress?.Report(installProgress);
