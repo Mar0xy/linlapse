@@ -456,7 +456,8 @@ public class UpdateService : IDisposable
                     }
                 }
 
-                if (data.TryGetProperty("pre_download_game", out var preload))
+                if (data.TryGetProperty("pre_download_game", out var preload) && 
+                    preload.ValueKind != JsonValueKind.Null)
                 {
                     if (preload.TryGetProperty("latest", out var preloadLatest))
                     {

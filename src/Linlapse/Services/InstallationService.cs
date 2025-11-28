@@ -2,6 +2,8 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using Linlapse.Models;
 using Serilog;
+using SharpCompress.Archives;
+using SharpCompress.Common;
 
 namespace Linlapse.Services;
 
@@ -64,6 +66,9 @@ public class InstallationService
             {
                 case ".zip":
                     await ExtractZipAsync(archivePath, installPath, installProgress, progress, cancellationToken);
+                    break;
+                case ".7z":
+                    await Extract7zAsync(archivePath, installPath, installProgress, progress, cancellationToken);
                     break;
                 default:
                     throw new NotSupportedException($"Archive format not supported: {extension}");
@@ -133,6 +138,55 @@ public class InstallationService
                 installProgress.ProcessedFiles++;
                 installProgress.ProcessedBytes += entry.Length;
                 installProgress.CurrentFile = entry.FullName;
+                progress?.Report(installProgress);
+                InstallProgressChanged?.Invoke(this, installProgress);
+            }
+        }, cancellationToken);
+    }
+
+    private async Task Extract7zAsync(
+        string archivePath,
+        string destinationPath,
+        InstallProgress installProgress,
+        IProgress<InstallProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        await Task.Run(() =>
+        {
+            using var archive = ArchiveFactory.Open(archivePath);
+            var entries = archive.Entries.Where(e => !e.IsDirectory).ToList();
+            installProgress.TotalFiles = entries.Count;
+            installProgress.TotalBytes = entries.Sum(e => e.Size);
+
+            foreach (var entry in archive.Entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var destinationFileName = Path.Combine(destinationPath, entry.Key ?? string.Empty);
+
+                // Handle directories
+                if (entry.IsDirectory)
+                {
+                    Directory.CreateDirectory(destinationFileName);
+                    continue;
+                }
+
+                // Ensure directory exists
+                var directory = Path.GetDirectoryName(destinationFileName);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                entry.WriteToFile(destinationFileName, new ExtractionOptions
+                {
+                    ExtractFullPath = false,
+                    Overwrite = true
+                });
+
+                installProgress.ProcessedFiles++;
+                installProgress.ProcessedBytes += entry.Size;
+                installProgress.CurrentFile = entry.Key ?? string.Empty;
                 progress?.Report(installProgress);
                 InstallProgressChanged?.Invoke(this, installProgress);
             }
