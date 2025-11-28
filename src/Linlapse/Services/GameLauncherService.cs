@@ -238,31 +238,39 @@ public class GameLauncherService
         // Determine whether to use Proton or Wine
         string winePath;
         bool isProton = false;
+        bool useProtonScript = false; // True when using the proton script (not wine binary inside Proton)
         
         if (settings.UseProton && !string.IsNullOrEmpty(settings.ProtonPath))
         {
-            // Proton path should point to the proton script or wine binary within Proton
+            // First try to find the wine binary within Proton
             var protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine64");
             if (!File.Exists(protonWinePath))
             {
                 protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine");
-            }
-            if (!File.Exists(protonWinePath))
-            {
-                // Try proton script directly
-                protonWinePath = Path.Combine(settings.ProtonPath, "proton");
             }
             
             if (File.Exists(protonWinePath))
             {
                 winePath = protonWinePath;
                 isProton = true;
-                Log.Information("Using Proton from {Path}", settings.ProtonPath);
+                Log.Information("Using Proton wine binary from {Path}", protonWinePath);
             }
             else
             {
-                Log.Warning("Proton path configured but wine binary not found at {Path}, falling back to Wine", settings.ProtonPath);
-                winePath = settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine";
+                // Try proton script directly - this requires different argument handling
+                var protonScriptPath = Path.Combine(settings.ProtonPath, "proton");
+                if (File.Exists(protonScriptPath))
+                {
+                    winePath = protonScriptPath;
+                    isProton = true;
+                    useProtonScript = true;
+                    Log.Information("Using Proton script from {Path}", protonScriptPath);
+                }
+                else
+                {
+                    Log.Warning("Proton path configured but neither wine binary nor proton script found at {Path}, falling back to Wine", settings.ProtonPath);
+                    winePath = settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine";
+                }
             }
         }
         else
@@ -280,7 +288,25 @@ public class GameLauncherService
         var useJadeite = RequiresJadeite(game.GameType);
         string arguments;
         
-        if (useJadeite && IsJadeiteAvailable())
+        if (useProtonScript)
+        {
+            // Proton script uses: proton run "executable" [args]
+            if (useJadeite && IsJadeiteAvailable())
+            {
+                var jadeitePath = GetJaditePath();
+                arguments = $"run \"{jadeitePath}\" \"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+                Log.Information("Using Jadeite launcher with Proton script for {Game}", game.DisplayName);
+            }
+            else
+            {
+                if (useJadeite && !IsJadeiteAvailable())
+                {
+                    Log.Warning("Jadeite is required for {Game} but not installed. Download it from Settings.", game.DisplayName);
+                }
+                arguments = $"run \"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+            }
+        }
+        else if (useJadeite && IsJadeiteAvailable())
         {
             var jadeitePath = GetJaditePath();
             // Launch with Jadeite: wine jadeite.exe "game_executable.exe"
