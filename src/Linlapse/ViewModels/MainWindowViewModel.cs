@@ -596,7 +596,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedGame == null || SelectedGame.IsInstalled) return;
 
-        // Prevent starting multiple downloads of different games
+        // Only one download at a time is supported - show message if already downloading
         if (IsDownloading)
         {
             StatusMessage = "A download is already in progress";
