@@ -93,11 +93,16 @@ public class BackgroundPlayer : UserControl, IDisposable
             {
                 Core.Initialize();
 
-                // Create LibVLC with minimal options
+                // Create LibVLC with options to minimize memory usage
                 _sharedLibVLC = new LibVLC(
                     "--no-video-title-show",
                     "--no-snapshot-preview",
-                    "--no-osd"
+                    "--no-osd",
+                    "--drop-late-frames",
+                    "--skip-frames",
+                    "--file-caching=1000",
+                    "--network-caching=1000",
+                    "--live-caching=1000"
                 );
 
                 _libVLCAvailable = true;
@@ -489,6 +494,11 @@ public class BackgroundPlayer : UserControl, IDisposable
             _frameReady = false;
             _renderTimer?.Stop();
             
+            // Dispose the media first
+            _currentMedia?.Dispose();
+            _currentMedia = null;
+            
+            // Dispose and recreate MediaPlayer to release LibVLC internal caches
             if (_mediaPlayer != null)
             {
                 // Stop playback first
@@ -499,11 +509,11 @@ public class BackgroundPlayer : UserControl, IDisposable
                 
                 // Give LibVLC time to finish any pending callbacks
                 Thread.Sleep(100);
+                
+                _mediaPlayer.EndReached -= OnVideoEndReached;
+                _mediaPlayer.Dispose();
+                _mediaPlayer = null;
             }
-            
-            // Dispose the media when stopping video
-            _currentMedia?.Dispose();
-            _currentMedia = null;
         }
         catch (Exception ex)
         {
