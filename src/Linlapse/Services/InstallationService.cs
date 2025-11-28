@@ -325,45 +325,54 @@ public class InstallationService
             }
         };
 
-        var lastProgressReport = DateTime.UtcNow;
-        var progressReportInterval = TimeSpan.FromMilliseconds(250);
-
-        process.OutputDataReceived += (sender, e) =>
-        {
-            if (string.IsNullOrEmpty(e.Data)) return;
-
-            // Parse 7z progress output (format: "  X% - filename" or "XX%")
-            var line = e.Data.Trim();
-            
-            // Try to extract percentage
-            var percentMatch = System.Text.RegularExpressions.Regex.Match(line, @"(\d+)%");
-            if (percentMatch.Success && int.TryParse(percentMatch.Groups[1].Value, out var percent))
-            {
-                var estimatedProcessedBytes = (long)(installProgress.TotalBytes * percent / 100.0);
-                installProgress.ProcessedBytes = estimatedProcessedBytes;
-                installProgress.ProcessedFiles = (int)(installProgress.TotalFiles * percent / 100.0);
-                
-                // Extract filename if present
-                var dashIndex = line.IndexOf(" - ", StringComparison.Ordinal);
-                if (dashIndex > 0 && dashIndex + 3 < line.Length)
-                {
-                    installProgress.CurrentFile = line[(dashIndex + 3)..];
-                }
-
-                var now = DateTime.UtcNow;
-                if (now - lastProgressReport >= progressReportInterval)
-                {
-                    progress?.Report(installProgress);
-                    InstallProgressChanged?.Invoke(this, installProgress);
-                    lastProgressReport = now;
-                }
-            }
-        };
-
         try
         {
             process.Start();
-            process.BeginOutputReadLine();
+
+            // Read stdout in a background task to handle 7z's in-place progress updates
+            // 7z uses backspaces (\b) to erase and rewrite progress, not newlines
+            // BeginOutputReadLine only fires on newlines, so we need to read character-by-character
+            var stdoutTask = Task.Run(async () =>
+            {
+                var lastProgressReport = DateTime.UtcNow;
+                var progressReportInterval = TimeSpan.FromMilliseconds(250);
+                var buffer = new char[512];
+                var reader = process.StandardOutput;
+                var percentRegex = new System.Text.RegularExpressions.Regex(@"(\d+)%\s*(?:-\s*(.+?))?(?:\s*$|\x08)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+                int charsRead;
+                while ((charsRead = await reader.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                {
+                    // Convert buffer to string and search for percentage patterns
+                    var chunk = new string(buffer, 0, charsRead);
+                    
+                    // Find all percentage matches in this chunk
+                    var matches = percentRegex.Matches(chunk);
+                    foreach (System.Text.RegularExpressions.Match match in matches)
+                    {
+                        if (int.TryParse(match.Groups[1].Value, out var percent))
+                        {
+                            var estimatedProcessedBytes = (long)(installProgress.TotalBytes * percent / 100.0);
+                            installProgress.ProcessedBytes = estimatedProcessedBytes;
+                            installProgress.ProcessedFiles = (int)(installProgress.TotalFiles * percent / 100.0);
+
+                            // Extract filename if present (group 2)
+                            if (match.Groups[2].Success && !string.IsNullOrWhiteSpace(match.Groups[2].Value))
+                            {
+                                installProgress.CurrentFile = match.Groups[2].Value.Trim();
+                            }
+
+                            var now = DateTime.UtcNow;
+                            if (now - lastProgressReport >= progressReportInterval)
+                            {
+                                progress?.Report(installProgress);
+                                InstallProgressChanged?.Invoke(this, installProgress);
+                                lastProgressReport = now;
+                            }
+                        }
+                    }
+                }
+            }, cancellationToken);
 
             // Wait for process to complete or cancellation
             using var registration = cancellationToken.Register(() =>
@@ -379,6 +388,9 @@ public class InstallationService
             });
 
             await process.WaitForExitAsync(cancellationToken);
+            
+            // Wait for stdout reading to complete
+            try { await stdoutTask; } catch { }
 
             if (process.ExitCode != 0)
             {
