@@ -231,10 +231,6 @@ public class GameLauncherService
         var settings = _settingsService.Settings;
         var gameSettings = settings.GameSpecificSettings.GetValueOrDefault(game.Id);
 
-        var winePrefix = gameSettings?.UseCustomWinePrefix == true
-            ? gameSettings.CustomWinePrefixPath
-            : settings.WinePrefixPath;
-
         // Determine whether to use Proton or Wine
         string winePath;
         bool isProton = false;
@@ -263,10 +259,22 @@ public class GameLauncherService
             winePath = settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine";
         }
 
-        // Ensure wine prefix exists
+        // Determine wine prefix - use per-game prefix by default
+        var winePrefix = gameSettings?.UseCustomWinePrefix == true
+            ? gameSettings.CustomWinePrefixPath
+            : GetGameWinePrefixPath(game);
+
+        // Ensure wine prefix directory exists
         if (!string.IsNullOrEmpty(winePrefix))
         {
             Directory.CreateDirectory(winePrefix);
+        }
+
+        // Initialize wine prefix with required components (only for Wine, not Proton)
+        // Proton handles its own prefix initialization with DXVK, VKD3D, etc.
+        if (!isProton && !string.IsNullOrEmpty(winePrefix))
+        {
+            await EnsureWinePrefixInitializedAsync(winePrefix, winePath);
         }
 
         // Determine if we need to use Jadeite for this game
@@ -373,6 +381,171 @@ public class GameLauncherService
         process.BeginErrorReadLine();
 
         return process;
+    }
+
+    /// <summary>
+    /// Get the wine prefix path for a specific game
+    /// </summary>
+    private static string GetGameWinePrefixPath(GameInfo game)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        // Sanitize game name for use in path (remove invalid characters)
+        var safeName = string.Join("_", game.Name.Split(Path.GetInvalidFileNameChars()));
+        return Path.Combine(home, ".local", "share", "linlapse", "wine-prefixes", safeName);
+    }
+
+    /// <summary>
+    /// Ensure the wine prefix is initialized with required components
+    /// </summary>
+    private async Task EnsureWinePrefixInitializedAsync(string winePrefix, string winePath)
+    {
+        // Check if prefix is already initialized (has system.reg file)
+        var systemRegPath = Path.Combine(winePrefix, "system.reg");
+        var markerPath = Path.Combine(winePrefix, ".linlapse_initialized");
+        
+        if (File.Exists(systemRegPath) && File.Exists(markerPath))
+        {
+            Log.Debug("Wine prefix already initialized: {Prefix}", winePrefix);
+            return;
+        }
+
+        Log.Information("Initializing wine prefix: {Prefix}", winePrefix);
+
+        try
+        {
+            // Step 1: Initialize the prefix with wineboot
+            await RunWineCommandAsync(winePath, "wineboot", "--init", winePrefix);
+            Log.Information("Wine prefix created with wineboot");
+
+            // Step 2: Install required components with winetricks
+            // Check if winetricks is available
+            if (await IsWinetricksAvailableAsync())
+            {
+                Log.Information("Installing wine components with winetricks...");
+                
+                // Install corefonts (required for proper text rendering)
+                await RunWinetricksAsync(winePrefix, "corefonts");
+                
+                // Install DXVK (DirectX 9/10/11 to Vulkan translation)
+                await RunWinetricksAsync(winePrefix, "dxvk");
+                
+                // Install VKD3D (DirectX 12 to Vulkan translation)
+                await RunWinetricksAsync(winePrefix, "vkd3d");
+                
+                Log.Information("Wine components installed successfully");
+            }
+            else
+            {
+                Log.Warning("winetricks not found. Please install winetricks to get DXVK, VKD3D, and corefonts. " +
+                           "Games may not run correctly without these components.");
+            }
+
+            // Create marker file to indicate prefix is initialized
+            await File.WriteAllTextAsync(markerPath, $"Initialized by Linlapse on {DateTime.UtcNow:O}");
+            Log.Information("Wine prefix initialization complete: {Prefix}", winePrefix);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to initialize wine prefix: {Prefix}", winePrefix);
+            // Don't throw - allow the game to try to launch anyway
+        }
+    }
+
+    /// <summary>
+    /// Check if winetricks is available on the system
+    /// </summary>
+    private static async Task<bool> IsWinetricksAvailableAsync()
+    {
+        try
+        {
+            var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "which",
+                    Arguments = "winetricks",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                }
+            };
+            process.Start();
+            await process.WaitForExitAsync();
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Run a wine command with the specified prefix
+    /// </summary>
+    private static async Task RunWineCommandAsync(string winePath, string command, string args, string winePrefix)
+    {
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = command,
+                Arguments = args,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+        
+        process.StartInfo.Environment["WINEPREFIX"] = winePrefix;
+        process.StartInfo.Environment["WINE"] = winePath;
+        
+        process.Start();
+        await process.WaitForExitAsync();
+        
+        if (process.ExitCode != 0)
+        {
+            var error = await process.StandardError.ReadToEndAsync();
+            Log.Warning("Wine command '{Command} {Args}' exited with code {ExitCode}: {Error}", 
+                command, args, process.ExitCode, error);
+        }
+    }
+
+    /// <summary>
+    /// Run winetricks with the specified prefix and verb
+    /// </summary>
+    private static async Task RunWinetricksAsync(string winePrefix, string verb)
+    {
+        Log.Debug("Running winetricks {Verb} for prefix {Prefix}", verb, winePrefix);
+        
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "winetricks",
+                Arguments = $"-q {verb}",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+        
+        process.StartInfo.Environment["WINEPREFIX"] = winePrefix;
+        
+        process.Start();
+        await process.WaitForExitAsync();
+        
+        if (process.ExitCode != 0)
+        {
+            var error = await process.StandardError.ReadToEndAsync();
+            Log.Warning("winetricks {Verb} exited with code {ExitCode}: {Error}", 
+                verb, process.ExitCode, error);
+        }
+        else
+        {
+            Log.Debug("winetricks {Verb} completed successfully", verb);
+        }
     }
 
     private void OnGameExited(GameInfo game)
