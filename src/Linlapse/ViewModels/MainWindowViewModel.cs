@@ -354,7 +354,16 @@ public partial class MainWindowViewModel : ViewModelBase
     private void OnInstallProgress(object? sender, InstallProgress progress)
     {
         ProgressPercent = progress.PercentComplete;
-        ProgressText = $"Installing: {progress.ProcessedFiles}/{progress.TotalFiles} files";
+        
+        // For extraction, just show "Extracting..." without file counts since 7z progress is unreliable
+        if (progress.State == InstallState.Extracting)
+        {
+            ProgressText = "Extracting...";
+        }
+        else
+        {
+            ProgressText = $"Installing: {progress.ProcessedFiles}/{progress.TotalFiles} files";
+        }
     }
 
     private void OnRepairProgress(object? sender, RepairProgress progress)
