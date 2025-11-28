@@ -230,7 +230,10 @@ public class BackgroundPlayer : UserControl, IDisposable
 
         if (_imageView != null)
         {
+            // Dispose the old bitmap to free memory
+            var oldSource = _imageView.Source as IDisposable;
             _imageView.Source = null;
+            oldSource?.Dispose();
         }
     }
 
@@ -267,8 +270,11 @@ public class BackgroundPlayer : UserControl, IDisposable
                     {
                         if (_imageView != null && !_isPlayingVideo)
                         {
+                            // Dispose old bitmap before setting new one
+                            var oldSource = _imageView.Source as IDisposable;
                             var bitmap = new Bitmap(source);
                             _imageView.Source = bitmap;
+                            oldSource?.Dispose();
                             Log.Debug("Loaded background image: {Path}", source);
                         }
                     }
@@ -311,8 +317,16 @@ public class BackgroundPlayer : UserControl, IDisposable
                     var bitmap = new Bitmap(stream);
                     if (_imageView != null && !_isPlayingVideo)
                     {
+                        // Dispose old bitmap before setting new one
+                        var oldSource = _imageView.Source as IDisposable;
                         _imageView.Source = bitmap;
+                        oldSource?.Dispose();
                         Log.Debug("Loaded background image from URL: {Url}", url);
+                    }
+                    else
+                    {
+                        // If we can't use the bitmap, dispose it
+                        bitmap.Dispose();
                     }
                 }
                 catch (Exception ex)
@@ -383,6 +397,10 @@ public class BackgroundPlayer : UserControl, IDisposable
                 }
 
                 _mediaPlayer.Play(media);
+                
+                // Dispose media after passing to player (player takes ownership of playback)
+                media.Dispose();
+                
                 _renderTimer?.Start();
                 Log.Debug("Playing background video with frame rendering: {Path}", source);
             }

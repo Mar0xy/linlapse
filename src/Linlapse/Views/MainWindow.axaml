@@ -255,7 +255,8 @@
                     <!-- Theme overlay image (shown on top of video backgrounds) - ZIndex 1.5 -->
                     <Image ZIndex="1"
                            Source="{Binding ThemeOverlaySource, Converter={StaticResource FilePathToBitmapConverter}}"
-                           Stretch="None"
+                           Stretch="Uniform"
+                           MaxHeight="600"
                            HorizontalAlignment="Right"
                            VerticalAlignment="Bottom"
                            IsHitTestVisible="False"
