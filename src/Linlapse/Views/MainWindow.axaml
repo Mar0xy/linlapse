@@ -389,12 +389,13 @@
 
                         <!-- Progress Bar -->
                         <Border Grid.Row="1" 
-                                Background="#1a1a2eCC"
+                                Background="#1a1a2eEE"
                                 CornerRadius="8"
                                 Padding="16,12"
                                 Margin="0,16,0,0"
                                 MaxWidth="600"
                                 HorizontalAlignment="Left"
+                                BoxShadow="0 4 16 0 #000000AA"
                                 IsVisible="{Binding IsDownloading}">
                             <StackPanel>
                                 <ProgressBar Value="{Binding ProgressPercent}"
