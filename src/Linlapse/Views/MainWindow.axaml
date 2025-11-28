@@ -1,0 +1,685 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Linlapse.ViewModels"
+        xmlns:models="using:Linlapse.Models"
+        xmlns:services="using:Linlapse.Services"
+        xmlns:controls="using:Linlapse.Views.Controls"
+        xmlns:converters="using:Linlapse.Converters"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
+        x:Class="Linlapse.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Linlapse - Game Launcher"
+        Width="1200" Height="700"
+        MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="#1a1a2e">
+
+    <Window.Resources>
+        <converters:FilePathToBitmapConverter x:Key="FilePathToBitmapConverter"/>
+    </Window.Resources>
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Window.Styles>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="#6366f1"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="24,12"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+        <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#818cf8"/>
+        </Style>
+        <Style Selector="Button.primary:disabled /template/ ContentPresenter">
+            <Setter Property="Background" Value="#4b4b6b"/>
+            <Setter Property="Foreground" Value="#71717a"/>
+        </Style>
+        <Style Selector="Button.secondary">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#a1a1aa"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#3f3f46"/>
+            <Setter Property="CornerRadius" Value="6"/>
+        </Style>
+        <Style Selector="Button.secondary:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#27272a"/>
+        </Style>
+        <Style Selector="Button.danger">
+            <Setter Property="Background" Value="#dc2626"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="CornerRadius" Value="6"/>
+        </Style>
+        <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#ef4444"/>
+        </Style>
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3b3b5c"/>
+        </Style>
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#2a2a40"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Sidebar -->
+        <Border Grid.Column="0" Background="#16162a" Padding="16">
+            <Grid RowDefinitions="Auto,Auto,*,Auto">
+                <!-- Logo/Title -->
+                <StackPanel Grid.Row="0" Margin="0,0,0,16">
+                    <TextBlock Text="🎮 Linlapse" 
+                               FontSize="24" 
+                               FontWeight="Bold" 
+                               Foreground="White"/>
+                    <TextBlock Text="Linux Game Launcher"
+                               FontSize="12"
+                               Foreground="#71717a"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+
+                <!-- Region Selector -->
+                <Border Grid.Row="1" Background="#27272a" CornerRadius="8" Padding="12" Margin="0,0,0,16">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Region" FontSize="12" Foreground="#a1a1aa"/>
+                        <ComboBox ItemsSource="{Binding AvailableRegions}"
+                                  SelectedItem="{Binding SelectedRegion}"
+                                  HorizontalAlignment="Stretch"
+                                  Background="#3f3f46"
+                                  Foreground="White"
+                                  BorderBrush="#52525b"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Game List -->
+                <ListBox Grid.Row="2" 
+                         ItemsSource="{Binding Games}"
+                         SelectedItem="{Binding SelectedGame}"
+                         Background="Transparent"
+                         BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:GameInfo">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Grid.Column="0"
+                                        Width="40" Height="40"
+                                        CornerRadius="8"
+                                        Background="#3b3b5c"
+                                        ClipToBounds="True"
+                                        Margin="0,0,12,0">
+                                    <!-- Show game icon if available, otherwise show emoji -->
+                                    <Panel>
+                                        <Image Source="{Binding LogoImagePath, Converter={StaticResource FilePathToBitmapConverter}}"
+                                               Stretch="UniformToFill"
+                                               IsVisible="{Binding LogoImagePath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                        <TextBlock Text="🎯" 
+                                                   VerticalAlignment="Center"
+                                                   HorizontalAlignment="Center"
+                                                   FontSize="18"
+                                                   IsVisible="{Binding LogoImagePath, Converter={x:Static StringConverters.IsNullOrEmpty}}"/>
+                                    </Panel>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               FontWeight="SemiBold"
+                                               Foreground="White"/>
+                                    <TextBlock FontSize="11" Foreground="#71717a">
+                                        <TextBlock.Text>
+                                            <MultiBinding StringFormat="{}{0} • {1}">
+                                                <Binding Path="Region"/>
+                                                <Binding Path="State"/>
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                </StackPanel>
+                                <Border Grid.Column="2"
+                                        IsVisible="{Binding IsInstalled}"
+                                        Background="#22c55e"
+                                        CornerRadius="4"
+                                        Padding="6,2">
+                                    <TextBlock Text="✓" FontSize="10" Foreground="White"/>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- Bottom Actions -->
+                <StackPanel Grid.Row="3" Spacing="8">
+                    <Button Content="⚙ Settings" 
+                            Classes="secondary"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding ToggleSettingsCommand}"/>
+                    <Button Content="⟳ Refresh Games" 
+                            Classes="secondary"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding RefreshGamesCommand}"/>
+                    <TextBlock Text="{Binding WineVersion}"
+                               FontSize="11"
+                               Foreground="#52525b"
+                               TextWrapping="Wrap"
+                               Margin="0,8,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Game Details Panel - Full bleed background -->
+            <Border Grid.Row="0" 
+                    ClipToBounds="True">
+                <Grid>
+                    <!-- Background Image/Video - ZIndex 0 (lowest) -->
+                    <controls:BackgroundPlayer 
+                        x:Name="BackgroundPlayer"
+                        Source="{Binding BackgroundSource}"
+                        IsVideo="{Binding IsVideoBackground}"
+                        MuteAudio="True"
+                        IsHitTestVisible="False"
+                        ZIndex="0"/>
+                    
+                    <!-- Fallback Gradient (shown when no background) - ZIndex 1 -->
+                    <Border ZIndex="1"
+                            IsVisible="{Binding BackgroundSource, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                                <GradientStop Color="#2d2d5a" Offset="0"/>
+                                <GradientStop Color="#1a1a2e" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    
+                    <!-- Semi-transparent overlay for better text readability over backgrounds - ZIndex 2 -->
+                    <Border Background="#000000" Opacity="0.4"
+                            ZIndex="2"
+                            IsVisible="{Binding BackgroundSource, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    
+                    <!-- Content when game is selected - ZIndex 3 (highest) -->
+                    <Grid ZIndex="3"
+                          IsVisible="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNotNull}}"
+                          Margin="32">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Game Info -->
+                        <StackPanel Grid.Row="0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding SelectedGame.DisplayName}"
+                                       FontSize="48"
+                                       FontWeight="Bold"
+                                       Foreground="White"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,16,0,0" Spacing="16">
+                                <Border Background="#3b3b5c" CornerRadius="6" Padding="12,6">
+                                    <TextBlock Foreground="#a1a1aa">
+                                        <Run Text="Region: "/>
+                                        <Run Text="{Binding SelectedGame.Region}" Foreground="White"/>
+                                    </TextBlock>
+                                </Border>
+                                <Border Background="#3b3b5c" CornerRadius="6" Padding="12,6">
+                                    <TextBlock Foreground="#a1a1aa">
+                                        <Run Text="Status: "/>
+                                        <Run Text="{Binding SelectedGame.State}" Foreground="White"/>
+                                    </TextBlock>
+                                </Border>
+                                <Border Background="#3b3b5c" CornerRadius="6" Padding="12,6"
+                                        IsVisible="{Binding SelectedGame.IsInstalled}">
+                                    <TextBlock Foreground="#a1a1aa">
+                                        <Run Text="Version: "/>
+                                        <Run Text="{Binding SelectedGame.Version, FallbackValue='Unknown'}" Foreground="White"/>
+                                    </TextBlock>
+                                </Border>
+                                <!-- Download size for non-installed games -->
+                                <Border Background="#3b3b5c" CornerRadius="6" Padding="12,6"
+                                        IsVisible="{Binding !SelectedGame.IsInstalled}">
+                                    <TextBlock Foreground="#a1a1aa">
+                                        <Run Text="Download: "/>
+                                        <Run Text="{Binding DownloadSizeText, FallbackValue='Checking...'}" Foreground="White"/>
+                                    </TextBlock>
+                                </Border>
+                            </StackPanel>
+                            
+                            <!-- Update Available Banner -->
+                            <Border Background="#854d0e" 
+                                    CornerRadius="8" 
+                                    Padding="16,12"
+                                    Margin="0,16,0,0"
+                                    IsVisible="{Binding AvailableUpdate.HasUpdate, FallbackValue=False}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Update Available!" FontWeight="SemiBold" Foreground="#fef08a"/>
+                                        <TextBlock Foreground="#fde047" FontSize="12">
+                                            <Run Text="New version: "/>
+                                            <Run Text="{Binding AvailableUpdate.LatestVersion}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" 
+                                            Content="Update Now" 
+                                            Classes="primary"
+                                            Command="{Binding ApplyUpdateCommand}"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Download Info for non-installed games -->
+                            <Border Background="#1e3a5f" 
+                                    CornerRadius="8" 
+                                    Padding="16,12"
+                                    Margin="0,16,0,0"
+                                    IsVisible="{Binding DownloadInfo, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel>
+                                    <TextBlock Text="Download Information" FontWeight="SemiBold" Foreground="#93c5fd" Margin="0,0,0,8"/>
+                                    <TextBlock Foreground="#71717a" FontSize="12">
+                                        <Run Text="Version: "/>
+                                        <Run Text="{Binding DownloadInfo.Version}" Foreground="#93c5fd"/>
+                                    </TextBlock>
+                                    <TextBlock Foreground="#71717a" FontSize="12" Margin="0,4,0,0">
+                                        <Run Text="Size: "/>
+                                        <Run Text="{Binding DownloadSizeText}" Foreground="#93c5fd"/>
+                                    </TextBlock>
+                                    <TextBlock Foreground="#71717a" FontSize="12" Margin="0,4,0,0"
+                                               IsVisible="{Binding DownloadInfo.VoicePacks.Count}">
+                                        <Run Text="Voice packs available: "/>
+                                        <Run Text="{Binding DownloadInfo.VoicePacks.Count}" Foreground="#93c5fd"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Cache Info -->
+                            <Border Background="#27272a" 
+                                    CornerRadius="8" 
+                                    Padding="16,12"
+                                    Margin="0,16,0,0"
+                                    IsVisible="{Binding CacheInfo, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel>
+                                    <TextBlock Text="Cache Information" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+                                    <TextBlock Foreground="#71717a" FontSize="12">
+                                        <Run Text="Total cache size: "/>
+                                        <Run Text="{Binding CacheInfo.TotalSize, StringFormat='{}{0:N0} bytes'}" Foreground="#a1a1aa"/>
+                                        <Run Text=" ("/>
+                                        <Run Text="{Binding CacheInfo.TotalFiles}" Foreground="#a1a1aa"/>
+                                        <Run Text=" files)"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                            
+                            <TextBlock Text="{Binding SelectedGame.InstallPath}"
+                                       IsVisible="{Binding SelectedGame.IsInstalled}"
+                                       Foreground="#52525b"
+                                       FontSize="12"
+                                       Margin="0,16,0,0"/>
+                        </StackPanel>
+
+                        <!-- Progress Bar -->
+                        <StackPanel Grid.Row="1" 
+                                    Margin="0,16,0,0"
+                                    IsVisible="{Binding IsDownloading}">
+                            <ProgressBar Value="{Binding ProgressPercent}"
+                                         Maximum="100"
+                                         Height="8"
+                                         CornerRadius="4"
+                                         Background="#3f3f46"
+                                         Foreground="#6366f1"/>
+                            <Grid Margin="0,8,0,0">
+                                <TextBlock Text="{Binding ProgressText}"
+                                           Foreground="#a1a1aa"
+                                           FontSize="12"/>
+                                <Button Content="Cancel"
+                                        Classes="secondary"
+                                        HorizontalAlignment="Right"
+                                        Command="{Binding CancelDownloadCommand}"
+                                        Padding="8,4"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Action Buttons -->
+                        <StackPanel Grid.Row="2" 
+                                    Orientation="Horizontal" 
+                                    Spacing="12"
+                                    Margin="0,16,0,0"
+                                    HorizontalAlignment="Left">
+                            <!-- Launch Button (for installed games) -->
+                            <Button Classes="primary"
+                                    Command="{Binding LaunchGameCommand}"
+                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    IsEnabled="{Binding !IsGameRunning}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="▶"/>
+                                    <TextBlock Text="Launch Game"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <!-- Install Button (for non-installed games) -->
+                            <Button Classes="primary"
+                                    Command="{Binding InstallGameCommand}"
+                                    IsVisible="{Binding !SelectedGame.IsInstalled}"
+                                    IsEnabled="{Binding !IsDownloading}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="📥"/>
+                                    <TextBlock Text="Install Game"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <!-- Stop Button -->
+                            <Button Classes="danger"
+                                    IsVisible="{Binding IsGameRunning}"
+                                    Command="{Binding StopGameCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="⏹"/>
+                                    <TextBlock Text="Stop Game"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <!-- Repair Button -->
+                            <Button Classes="secondary"
+                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    Command="{Binding RepairGameCommand}"
+                                    IsEnabled="{Binding !IsRepairing}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="🔧"/>
+                                    <TextBlock Text="Verify Files"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <!-- Clear Cache Button -->
+                            <Button Classes="secondary"
+                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    Command="{Binding ClearCacheCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="🗑"/>
+                                    <TextBlock Text="Clear Cache"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <!-- Check Updates Button -->
+                            <Button Classes="secondary"
+                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    Command="{Binding CheckForUpdatesCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="🔄"/>
+                                    <TextBlock Text="Check Updates"/>
+                                </StackPanel>
+                            </Button>
+
+                            <!-- Preload Button -->
+                            <Button Classes="secondary"
+                                    IsVisible="{Binding SelectedGame.IsInstalled}"
+                                    Command="{Binding DownloadPreloadCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="📥"/>
+                                    <TextBlock Text="Preload"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Placeholder when no game is selected - ZIndex 3 -->
+                    <StackPanel ZIndex="3"
+                                IsVisible="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNull}}"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Center">
+                        <TextBlock Text="🎮" FontSize="64" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Select a game from the sidebar"
+                                   FontSize="18"
+                                   Foreground="#71717a"
+                                   Margin="0,16,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Settings Panel (overlay) -->
+            <Border Grid.Row="0"
+                    IsVisible="{Binding IsSettingsVisible}"
+                    Background="#1a1a2e"
+                    Margin="24"
+                    CornerRadius="16"
+                    Padding="32">
+                <ScrollViewer>
+                    <StackPanel Spacing="24">
+                        <!-- Settings Header -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="⚙ Settings" 
+                                       FontSize="28" 
+                                       FontWeight="Bold" 
+                                       Foreground="White"/>
+                            <Button Grid.Column="1" 
+                                    Content="✕ Close" 
+                                    Classes="secondary"
+                                    Command="{Binding ToggleSettingsCommand}"/>
+                        </Grid>
+
+                        <!-- Wine/Proton Configuration -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Wine/Proton Configuration" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                
+                                <StackPanel Spacing="8">
+                                    <CheckBox IsChecked="{Binding UseSystemWine}"
+                                              Foreground="White">
+                                        <TextBlock Text="Use system Wine" Foreground="White"/>
+                                    </CheckBox>
+                                    
+                                    <TextBlock Text="Custom Wine executable path:" 
+                                               Foreground="#a1a1aa" 
+                                               FontSize="12"
+                                               Margin="0,8,0,0"/>
+                                    <TextBox Text="{Binding WineExecutablePath}"
+                                             Watermark="/usr/bin/wine or custom path"
+                                             Background="#3f3f46"
+                                             Foreground="White"
+                                             BorderBrush="#52525b"
+                                             Padding="12,8"/>
+                                    
+                                    <TextBlock Text="Wine prefix path:" 
+                                               Foreground="#a1a1aa" 
+                                               FontSize="12"
+                                               Margin="0,8,0,0"/>
+                                    <TextBox Text="{Binding WinePrefixPath}"
+                                             Watermark="~/.local/share/linlapse/wine-prefix"
+                                             Background="#3f3f46"
+                                             Foreground="White"
+                                             BorderBrush="#52525b"
+                                             Padding="12,8"/>
+                                    
+                                    <CheckBox IsChecked="{Binding UseProton}"
+                                              Foreground="White"
+                                              Margin="0,8,0,0">
+                                        <TextBlock Text="Use Proton instead of Wine" Foreground="White"/>
+                                    </CheckBox>
+                                    
+                                    <TextBlock Text="Proton path (e.g., Steam's Proton):" 
+                                               Foreground="#a1a1aa" 
+                                               FontSize="12"
+                                               Margin="0,8,0,0"/>
+                                    <TextBox Text="{Binding ProtonPath}"
+                                             Watermark="~/.steam/steam/steamapps/common/Proton 9.0/proton"
+                                             Background="#3f3f46"
+                                             Foreground="White"
+                                             BorderBrush="#52525b"
+                                             Padding="12,8"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Jadeite (Anti-Cheat Bypass) -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Jadeite (Anti-Cheat Bypass)" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                <TextBlock Text="Required for Honkai: Star Rail and Honkai Impact 3rd to run on Linux" 
+                                           Foreground="#a1a1aa" 
+                                           FontSize="12"
+                                           TextWrapping="Wrap"/>
+                                
+                                <StackPanel Spacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="✓ Jadeite is installed and ready" 
+                                                       FontSize="12" 
+                                                       Foreground="#22c55e"
+                                                       IsVisible="{Binding IsJadeiteAvailable}"/>
+                                            <TextBlock Text="✗ Jadeite is not installed" 
+                                                       FontSize="12" 
+                                                       Foreground="#ef4444"
+                                                       IsVisible="{Binding !IsJadeiteAvailable}"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" 
+                                                Content="Download Jadeite" 
+                                                Classes="primary"
+                                                Command="{Binding DownloadJadeiteCommand}"
+                                                IsEnabled="{Binding !IsDownloadingJadeite}"
+                                                IsVisible="{Binding !IsJadeiteAvailable}"/>
+                                    </Grid>
+                                    
+                                    <TextBlock Text="Jadeite is an open-source tool from Codeberg that allows HoYoverse games to run on Linux via Wine."
+                                               FontSize="11"
+                                               Foreground="#71717a"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Voice Pack Selection -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Voice Pack Selection" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                <TextBlock Text="Select which voice packs to download with games:" 
+                                           Foreground="#a1a1aa" 
+                                           FontSize="12"/>
+                                
+                                <StackPanel Spacing="8">
+                                    <CheckBox Foreground="White"
+                                              IsChecked="{Binding VoiceLanguageOptions[0].IsSelected}">
+                                        <TextBlock Text="English (en-us)" Foreground="White"/>
+                                    </CheckBox>
+                                    <CheckBox Foreground="White"
+                                              IsChecked="{Binding VoiceLanguageOptions[1].IsSelected}">
+                                        <TextBlock Text="Japanese (ja-jp)" Foreground="White"/>
+                                    </CheckBox>
+                                    <CheckBox Foreground="White"
+                                              IsChecked="{Binding VoiceLanguageOptions[2].IsSelected}">
+                                        <TextBlock Text="Chinese Simplified (zh-cn)" Foreground="White"/>
+                                    </CheckBox>
+                                    <CheckBox Foreground="White"
+                                              IsChecked="{Binding VoiceLanguageOptions[3].IsSelected}">
+                                        <TextBlock Text="Korean (ko-kr)" Foreground="White"/>
+                                    </CheckBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Download Settings -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Download Settings" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Default game install path:" 
+                                               Foreground="#a1a1aa" 
+                                               FontSize="12"/>
+                                    <TextBox Text="{Binding DefaultGameInstallPath}"
+                                             Watermark="~/Games"
+                                             Background="#3f3f46"
+                                             Foreground="White"
+                                             BorderBrush="#52525b"
+                                             Padding="12,8"/>
+                                    
+                                    <TextBlock Text="Max concurrent downloads:" 
+                                               Foreground="#a1a1aa" 
+                                               FontSize="12"
+                                               Margin="0,8,0,0"/>
+                                    <NumericUpDown Value="{Binding MaxConcurrentDownloads}"
+                                                   Minimum="1"
+                                                   Maximum="16"
+                                                   Background="#3f3f46"
+                                                   Foreground="White"
+                                                   BorderBrush="#52525b"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- General Settings -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="General" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                
+                                <StackPanel Spacing="8">
+                                    <CheckBox IsChecked="{Binding CheckUpdatesOnStartup}"
+                                              Foreground="White">
+                                        <TextBlock Text="Check for updates on startup" Foreground="White"/>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding EnableLogging}"
+                                              Foreground="White">
+                                        <TextBlock Text="Enable logging" Foreground="White"/>
+                                    </CheckBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Save/Reset Buttons -->
+                        <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+                            <Button Content="Reset to Defaults" 
+                                    Classes="secondary"
+                                    Command="{Binding ResetSettingsCommand}"/>
+                            <Button Content="Save Settings" 
+                                    Classes="primary"
+                                    Command="{Binding SaveSettingsCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Status Bar -->
+            <Border Grid.Row="1" Background="#16162a" Padding="16,8">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding StatusMessage}"
+                               Foreground="#71717a"
+                               VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16">
+                        <ProgressBar IsVisible="{Binding IsLoading}"
+                                     IsIndeterminate="True"
+                                     Width="100"/>
+                        <TextBlock Text="{Binding AppVersion, StringFormat='v{0}'}"
+                                   Foreground="#52525b"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

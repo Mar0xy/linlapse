@@ -1,0 +1,64 @@
+name: Build Linux x64
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install libvlc-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libvlc-dev
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore src/Linlapse/Linlapse.csproj
+
+    - name: Build
+      run: dotnet build src/Linlapse/Linlapse.csproj -c Release --no-restore
+
+    - name: Publish for Linux x64
+      run: |
+        dotnet publish src/Linlapse/Linlapse.csproj \
+          -c Release \
+          -r linux-x64 \
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:PublishTrimmed=false \
+          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -o ./publish/linux-x64
+
+    - name: Set executable permissions
+      run: chmod +x ./publish/linux-x64/Linlapse
+
+    - name: Create archive
+      run: |
+        cd ./publish
+        tar -czvf linlapse-linux-x64.tar.gz linux-x64/
+        
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linlapse-linux-x64
+        path: ./publish/linlapse-linux-x64.tar.gz
+        retention-days: 14
+        if-no-files-found: error
