@@ -489,13 +489,13 @@ public class GameLauncherService
                 var winetricksPath = GetWinetricksPath();
                 
                 // Install corefonts (required for proper text rendering)
-                await RunWinetricksAsync(winetricksPath, winePrefix, "corefonts");
+                await RunWinetricksAsync(winetricksPath, winePrefix, winePath, "corefonts");
                 
                 // Install DXVK (DirectX 9/10/11 to Vulkan translation)
-                await RunWinetricksAsync(winetricksPath, winePrefix, "dxvk");
+                await RunWinetricksAsync(winetricksPath, winePrefix, winePath, "dxvk");
                 
                 // Install VKD3D (DirectX 12 to Vulkan translation)
-                await RunWinetricksAsync(winetricksPath, winePrefix, "vkd3d");
+                await RunWinetricksAsync(winetricksPath, winePrefix, winePath, "vkd3d");
                 
                 Log.Information("Wine components installed successfully");
             }
@@ -550,9 +550,9 @@ public class GameLauncherService
     /// <summary>
     /// Run winetricks with the specified prefix and verb
     /// </summary>
-    private static async Task RunWinetricksAsync(string winetricksPath, string winePrefix, string verb)
+    private static async Task RunWinetricksAsync(string winetricksPath, string winePrefix, string winePath, string verb)
     {
-        Log.Debug("Running winetricks {Verb} for prefix {Prefix}", verb, winePrefix);
+        Log.Debug("Running winetricks {Verb} for prefix {Prefix} with wine {Wine}", verb, winePrefix, winePath);
         
         var process = new Process
         {
@@ -568,6 +568,7 @@ public class GameLauncherService
         };
         
         process.StartInfo.Environment["WINEPREFIX"] = winePrefix;
+        process.StartInfo.Environment["WINE"] = winePath;
         
         process.Start();
         await process.WaitForExitAsync();
