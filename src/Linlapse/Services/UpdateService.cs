@@ -281,6 +281,9 @@ public class UpdateService : IDisposable
 
                 try
                 {
+                    // Check for cancellation before starting
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     // Initialize HDiff patcher with the diff file
                     var patcher = new HDiffPatch();
                     patcher.Initialize(patchPath);
@@ -300,6 +303,9 @@ public class UpdateService : IDisposable
                     // The HDiffPatch library patches: input (old) + diff -> output (new)
                     patcher.Patch(game.InstallPath, tempOutputPath, useBufferedPatch: true, cancellationToken);
 
+                    // Check for cancellation after patch completes
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     // Get the full path of install directory for path traversal validation
                     var fullInstallPath = Path.GetFullPath(game.InstallPath);
 
@@ -309,6 +315,9 @@ public class UpdateService : IDisposable
                         // Directory output - move all files back to install path
                         foreach (var file in Directory.GetFiles(tempOutputPath, "*", SearchOption.AllDirectories))
                         {
+                            // Check for cancellation during file operations
+                            cancellationToken.ThrowIfCancellationRequested();
+
                             var relativePath = Path.GetRelativePath(tempOutputPath, file);
                             var destPath = Path.GetFullPath(Path.Combine(game.InstallPath, relativePath));
                             
