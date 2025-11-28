@@ -17,6 +17,9 @@ public class UpdateService : IDisposable
     private readonly DownloadService _downloadService;
     private readonly InstallationService _installationService;
 
+    // Common version prefixes to strip during normalization (ordered by specificity)
+    private static readonly string[] VersionPrefixes = { "version", "ver", "v" };
+
     public event EventHandler<UpdateInfo>? UpdateAvailable;
     public event EventHandler<UpdateProgress>? UpdateProgressChanged;
     public event EventHandler<string>? UpdateCompleted;
@@ -625,10 +628,9 @@ public class UpdateService : IDisposable
             return "0.0";
 
         // Remove common version prefixes (case-insensitive)
-        var prefixes = new[] { "version", "ver", "v" };
         var normalized = version.Trim();
         
-        foreach (var prefix in prefixes)
+        foreach (var prefix in VersionPrefixes)
         {
             if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {

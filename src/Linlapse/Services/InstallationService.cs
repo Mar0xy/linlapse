@@ -337,15 +337,17 @@ public partial class InstallationService
 
             // Read stdout in a background task to handle 7z's in-place progress updates
             // 7z uses backspaces (\b) to erase and rewrite progress, not newlines
-            // BeginOutputReadLine only fires on newlines, so we need to read character-by-character
+            // BeginOutputReadLine only fires on newlines, so we need to read in chunks
             var stdoutTask = Task.Run(async () =>
             {
-                const int ReadBufferSize = 512;
+                const int ReadBufferSize = 4096; // Larger buffer for better I/O performance
                 var lastProgressReport = DateTime.UtcNow;
                 var progressReportInterval = TimeSpan.FromMilliseconds(250);
                 var buffer = new char[ReadBufferSize];
                 var reader = process.StandardOutput;
                 var percentRegex = SevenZipProgressRegex();
+                var accumulated = new System.Text.StringBuilder(ReadBufferSize);
+                var lastPercent = -1;
 
                 try
                 {
@@ -355,31 +357,61 @@ public partial class InstallationService
                         // Check for cancellation
                         cancellationToken.ThrowIfCancellationRequested();
                         
-                        // Convert buffer to string and search for percentage patterns
-                        var chunk = new string(buffer, 0, charsRead);
+                        // Accumulate the chunk
+                        accumulated.Append(buffer, 0, charsRead);
                         
-                        // Find all percentage matches in this chunk
-                        var matches = percentRegex.Matches(chunk);
+                        // Only process when we have enough data or hit a potential progress boundary
+                        // 7z progress lines are typically short, so process when we see backspaces or have > 256 chars
+                        var content = accumulated.ToString();
+                        if (content.Length > 256 || content.Contains('\x08') || content.Contains('\n'))
+                        {
+                            // Find all percentage matches in accumulated content
+                            var matches = percentRegex.Matches(content);
+                            foreach (Match match in matches)
+                            {
+                                if (int.TryParse(match.Groups[1].Value, out var percent) && percent != lastPercent)
+                                {
+                                    lastPercent = percent;
+                                    var estimatedProcessedBytes = (long)(installProgress.TotalBytes * percent / 100.0);
+                                    installProgress.ProcessedBytes = estimatedProcessedBytes;
+                                    installProgress.ProcessedFiles = (int)(installProgress.TotalFiles * percent / 100.0);
+
+                                    // Extract filename if present (group 2)
+                                    if (match.Groups[2].Success && !string.IsNullOrWhiteSpace(match.Groups[2].Value))
+                                    {
+                                        installProgress.CurrentFile = match.Groups[2].Value.Trim();
+                                    }
+
+                                    var now = DateTime.UtcNow;
+                                    if (now - lastProgressReport >= progressReportInterval)
+                                    {
+                                        progress?.Report(installProgress);
+                                        InstallProgressChanged?.Invoke(this, installProgress);
+                                        lastProgressReport = now;
+                                    }
+                                }
+                            }
+                            
+                            // Clear accumulated content after processing
+                            accumulated.Clear();
+                        }
+                    }
+                    
+                    // Process any remaining content
+                    if (accumulated.Length > 0)
+                    {
+                        var content = accumulated.ToString();
+                        var matches = percentRegex.Matches(content);
                         foreach (Match match in matches)
                         {
-                            if (int.TryParse(match.Groups[1].Value, out var percent))
+                            if (int.TryParse(match.Groups[1].Value, out var percent) && percent != lastPercent)
                             {
-                                var estimatedProcessedBytes = (long)(installProgress.TotalBytes * percent / 100.0);
-                                installProgress.ProcessedBytes = estimatedProcessedBytes;
+                                lastPercent = percent;
+                                installProgress.ProcessedBytes = (long)(installProgress.TotalBytes * percent / 100.0);
                                 installProgress.ProcessedFiles = (int)(installProgress.TotalFiles * percent / 100.0);
-
-                                // Extract filename if present (group 2)
                                 if (match.Groups[2].Success && !string.IsNullOrWhiteSpace(match.Groups[2].Value))
                                 {
                                     installProgress.CurrentFile = match.Groups[2].Value.Trim();
-                                }
-
-                                var now = DateTime.UtcNow;
-                                if (now - lastProgressReport >= progressReportInterval)
-                                {
-                                    progress?.Report(installProgress);
-                                    InstallProgressChanged?.Invoke(this, installProgress);
-                                    lastProgressReport = now;
                                 }
                             }
                         }
