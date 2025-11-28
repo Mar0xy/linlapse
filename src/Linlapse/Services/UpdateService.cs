@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text.Json;
 using Linlapse.Models;
 using Serilog;
+using SharpHDiffPatch.Core;
 
 namespace Linlapse.Services;
 
@@ -247,7 +248,7 @@ public class UpdateService : IDisposable
         {
             var patchDir = Path.Combine(SettingsService.GetCacheDirectory(), "patches", game.Id);
             Directory.CreateDirectory(patchDir);
-            var patchPath = Path.Combine(patchDir, "delta.patch");
+            var patchPath = Path.Combine(patchDir, "delta.hdiff");
 
             // Download patch
             var downloadProgress = new Progress<DownloadProgress>(dp =>
@@ -268,19 +269,94 @@ public class UpdateService : IDisposable
             if (!downloadSuccess)
                 return false;
 
-            // Apply patch
+            // Apply HDiff patch
             updateProgress.State = UpdateState.ApplyingPatch;
             progress?.Report(updateProgress);
 
-            // Note: In a full implementation, you would use HDiffPatch or similar
-            // For now, we'll extract as if it's a zip
             await Task.Run(() =>
             {
-                // Patch application logic would go here
-                Log.Information("Delta patch applied for {GameId}", game.Id);
+                // Create a temporary output path for the patched result
+                var tempOutputPath = Path.Combine(patchDir, "patched_output");
+
+                try
+                {
+                    // Initialize HDiff patcher with the diff file
+                    var patcher = new HDiffPatch();
+                    patcher.Initialize(patchPath);
+                    
+                    // Set up progress callback via EventListener
+                    EventListener.PatchEvent += (sender, e) =>
+                    {
+                        updateProgress.ProcessedBytes = e.CurrentSizePatched;
+                        updateProgress.TotalBytes = e.TotalSizeToBePatched;
+                        updateProgress.SpeedBytesPerSecond = e.Speed;
+                        progress?.Report(updateProgress);
+                        UpdateProgressChanged?.Invoke(this, updateProgress);
+                    };
+
+                    // Apply the patch
+                    // The HDiffPatch library patches a single file: input (old) + diff -> output (new)
+                    // For game updates, we typically need to patch the entire directory
+                    patcher.Patch(game.InstallPath, tempOutputPath, useBufferedPatch: true, cancellationToken);
+
+                    // If successful, move the patched output back
+                    if (File.Exists(tempOutputPath))
+                    {
+                        // Handle single file patch result
+                        var destPath = game.InstallPath;
+                        if (Directory.Exists(game.InstallPath))
+                        {
+                            // For directory patches, copy contents
+                            foreach (var file in Directory.GetFiles(tempOutputPath, "*", SearchOption.AllDirectories))
+                            {
+                                var relativePath = Path.GetRelativePath(tempOutputPath, file);
+                                var finalPath = Path.Combine(game.InstallPath, relativePath);
+                                
+                                var finalDir = Path.GetDirectoryName(finalPath);
+                                if (!string.IsNullOrEmpty(finalDir))
+                                {
+                                    Directory.CreateDirectory(finalDir);
+                                }
+                                
+                                File.Move(file, finalPath, overwrite: true);
+                            }
+                        }
+                    }
+                    else if (Directory.Exists(tempOutputPath))
+                    {
+                        // Directory output - move all files back to install path
+                        foreach (var file in Directory.GetFiles(tempOutputPath, "*", SearchOption.AllDirectories))
+                        {
+                            var relativePath = Path.GetRelativePath(tempOutputPath, file);
+                            var destPath = Path.Combine(game.InstallPath, relativePath);
+                            
+                            var destDir = Path.GetDirectoryName(destPath);
+                            if (!string.IsNullOrEmpty(destDir))
+                            {
+                                Directory.CreateDirectory(destDir);
+                            }
+                            
+                            File.Move(file, destPath, overwrite: true);
+                        }
+                    }
+
+                    Log.Information("Delta patch applied successfully for {GameId}", game.Id);
+                }
+                finally
+                {
+                    // Cleanup temp output
+                    try 
+                    { 
+                        if (File.Exists(tempOutputPath))
+                            File.Delete(tempOutputPath);
+                        if (Directory.Exists(tempOutputPath))
+                            Directory.Delete(tempOutputPath, recursive: true); 
+                    } 
+                    catch { }
+                }
             }, cancellationToken);
 
-            // Cleanup
+            // Cleanup patch file
             try { File.Delete(patchPath); } catch { }
 
             return true;

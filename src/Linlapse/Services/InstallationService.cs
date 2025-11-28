@@ -158,24 +158,20 @@ public class InstallationService
             installProgress.TotalFiles = fileEntries.Count;
             installProgress.TotalBytes = fileEntries.Sum(e => e.Size);
 
-            foreach (var entry in archive.Entries)
+            // Get the full path of destination for validation
+            var fullDestinationPath = Path.GetFullPath(destinationPath);
+
+            foreach (var entry in fileEntries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // Validate entry key to prevent path traversal attacks
                 var entryKey = entry.Key ?? string.Empty;
-                if (entryKey.Contains("..") || Path.IsPathRooted(entryKey))
+                
+                // Validate entry key to prevent path traversal attacks
+                var destinationFileName = Path.GetFullPath(Path.Combine(destinationPath, entryKey));
+                if (!destinationFileName.StartsWith(fullDestinationPath, StringComparison.OrdinalIgnoreCase))
                 {
                     Log.Warning("Skipping potentially malicious archive entry: {EntryKey}", entryKey);
-                    continue;
-                }
-
-                var destinationFileName = Path.Combine(destinationPath, entryKey);
-
-                // Handle directories
-                if (entry.IsDirectory)
-                {
-                    Directory.CreateDirectory(destinationFileName);
                     continue;
                 }
 
