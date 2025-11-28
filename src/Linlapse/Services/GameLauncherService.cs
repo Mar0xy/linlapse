@@ -242,35 +242,20 @@ public class GameLauncherService
         
         if (settings.UseProton && !string.IsNullOrEmpty(settings.ProtonPath))
         {
-            // First try to find the wine binary within Proton
-            var protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine64");
-            if (!File.Exists(protonWinePath))
+            // When Proton is enabled, always use the proton script (not wine binary inside Proton)
+            // The proton script handles all the Proton magic (DXVK, VKD3D, etc.)
+            var protonScriptPath = Path.Combine(settings.ProtonPath, "proton");
+            if (File.Exists(protonScriptPath))
             {
-                protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine");
-            }
-            
-            if (File.Exists(protonWinePath))
-            {
-                winePath = protonWinePath;
+                winePath = protonScriptPath;
                 isProton = true;
-                Log.Information("Using Proton wine binary from {Path}", protonWinePath);
+                useProtonScript = true;
+                Log.Information("Using Proton script from {Path}", protonScriptPath);
             }
             else
             {
-                // Try proton script directly - this requires different argument handling
-                var protonScriptPath = Path.Combine(settings.ProtonPath, "proton");
-                if (File.Exists(protonScriptPath))
-                {
-                    winePath = protonScriptPath;
-                    isProton = true;
-                    useProtonScript = true;
-                    Log.Information("Using Proton script from {Path}", protonScriptPath);
-                }
-                else
-                {
-                    Log.Warning("Proton path configured but neither wine binary nor proton script found at {Path}, falling back to Wine", settings.ProtonPath);
-                    winePath = settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine";
-                }
+                Log.Warning("Proton path configured but proton script not found at {Path}, falling back to Wine", settings.ProtonPath);
+                winePath = settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine";
             }
         }
         else
@@ -435,23 +420,25 @@ public class GameLauncherService
             // Check if Proton is configured and should be used
             if (settings.UseProton && !string.IsNullOrEmpty(settings.ProtonPath))
             {
-                // Look for wine binary within Proton
-                var protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine64");
-                if (!File.Exists(protonWinePath))
+                // When Proton is enabled, always use the proton script
+                var protonScriptPath = Path.Combine(settings.ProtonPath, "proton");
+                if (File.Exists(protonScriptPath))
                 {
-                    protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine");
-                }
-                
-                if (File.Exists(protonWinePath))
-                {
-                    winePath = protonWinePath;
-                    isProton = true;
+                    // For version info with Proton, we check if the script exists and report Proton version from path
+                    info.IsInstalled = true;
+                    info.IsProton = true;
+                    info.Path = protonScriptPath;
+                    
+                    // Try to extract version from the Proton path (e.g., "Proton 9.0" from path)
+                    var protonDirName = Path.GetFileName(settings.ProtonPath);
+                    info.Version = $"Proton ({protonDirName})";
+                    return info;
                 }
                 else
                 {
-                    // Proton path configured but wine not found
+                    // Proton path configured but script not found
                     info.IsInstalled = false;
-                    info.Version = $"Proton configured but wine not found at {settings.ProtonPath}";
+                    info.Version = $"Proton configured but proton script not found at {settings.ProtonPath}";
                     return info;
                 }
             }
