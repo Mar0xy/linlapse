@@ -22,6 +22,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly BackgroundService _backgroundService;
 
     private CancellationTokenSource? _downloadCts;
+    private bool _isRestoringSelection;
 
     [ObservableProperty]
     private GameInfo? _selectedGame;
@@ -342,8 +343,6 @@ public partial class MainWindowViewModel : ViewModelBase
             }
         }
     }
-    
-    private bool _isRestoringSelection;
 
     private void OnDownloadProgress(object? sender, DownloadProgress progress)
     {

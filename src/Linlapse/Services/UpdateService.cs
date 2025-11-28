@@ -61,12 +61,24 @@ public class UpdateService : IDisposable
             var response = await _httpClient.GetStringAsync(apiUrl, cancellationToken);
             var updateInfo = ParseUpdateResponse(game, response);
 
-            if (updateInfo != null && updateInfo.HasUpdate)
+            if (updateInfo != null)
             {
-                _gameService.UpdateGameState(gameId, GameState.NeedsUpdate);
-                UpdateAvailable?.Invoke(this, updateInfo);
-                Log.Information("Update available for {GameId}: {CurrentVersion} -> {LatestVersion}",
-                    gameId, game.Version, updateInfo.LatestVersion);
+                Log.Debug("Version comparison for {GameId}: Current={CurrentVersion}, Latest={LatestVersion}, HasUpdate={HasUpdate}",
+                    gameId, game.Version, updateInfo.LatestVersion, updateInfo.HasUpdate);
+                
+                if (updateInfo.HasUpdate)
+                {
+                    _gameService.UpdateGameState(gameId, GameState.NeedsUpdate);
+                    UpdateAvailable?.Invoke(this, updateInfo);
+                    Log.Information("Update available for {GameId}: {CurrentVersion} -> {LatestVersion}",
+                        gameId, game.Version, updateInfo.LatestVersion);
+                }
+                else if (game.State == GameState.NeedsUpdate)
+                {
+                    // Reset state if game was marked as needing update but no longer does
+                    _gameService.UpdateGameState(gameId, GameState.Ready);
+                    Log.Debug("Reset game state for {GameId} - no update needed", gameId);
+                }
             }
 
             return updateInfo;

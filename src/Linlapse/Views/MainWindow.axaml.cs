@@ -6,8 +6,6 @@ namespace Linlapse.Views;
 
 public partial class MainWindow : Window
 {
-    private object? _savedSelection;
-    
     public MainWindow()
     {
         InitializeComponent();
@@ -16,38 +14,17 @@ public partial class MainWindow : Window
         Closing += OnWindowClosing;
         
         // Prevent right-click from changing selection in the game list
-        // We save the selection before the right-click and restore it after
+        // Handle in tunnel phase to intercept before ListBox processes the event
         GameListBox.AddHandler(PointerPressedEvent, OnGameListPointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        GameListBox.AddHandler(PointerReleasedEvent, OnGameListPointerReleased, Avalonia.Interactivity.RoutingStrategies.Bubble);
     }
     
     private void OnGameListPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        // If it's a right-click, save the current selection
+        // If it's a right-click, mark as handled to prevent selection change
+        // The context menu will still open because ContextMenu handles it separately
         if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
         {
-            _savedSelection = GameListBox.SelectedItem;
-        }
-        else
-        {
-            _savedSelection = null;
-        }
-    }
-    
-    private void OnGameListPointerReleased(object? sender, PointerReleasedEventArgs e)
-    {
-        // If we saved a selection from a right-click, restore it
-        if (_savedSelection != null && e.InitialPressMouseButton == MouseButton.Right)
-        {
-            // Capture the value to use in the async callback
-            var selectionToRestore = _savedSelection;
-            _savedSelection = null;
-            
-            // Use Dispatcher to restore selection after the ListBox has processed the event
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            {
-                GameListBox.SelectedItem = selectionToRestore;
-            });
+            e.Handled = true;
         }
     }
 
@@ -56,7 +33,6 @@ public partial class MainWindow : Window
         // Unsubscribe from event handlers to prevent memory leaks
         Closing -= OnWindowClosing;
         GameListBox.RemoveHandler(PointerPressedEvent, OnGameListPointerPressed);
-        GameListBox.RemoveHandler(PointerReleasedEvent, OnGameListPointerReleased);
         
         // Dispose the background player to stop video and clean up LibVLC
         if (BackgroundPlayer != null)
