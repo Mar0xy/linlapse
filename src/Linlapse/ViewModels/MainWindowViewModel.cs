@@ -39,6 +39,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _isDownloading;
 
     [ObservableProperty]
+    private bool _isPaused;
+
+    [ObservableProperty]
     private bool _isRepairing;
 
     [ObservableProperty]
@@ -647,6 +650,7 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             IsDownloading = false;
+            IsPaused = false;
             ProgressPercent = 0;
             ProgressText = string.Empty;
             DownloadInfo = null;
@@ -659,7 +663,24 @@ public partial class MainWindowViewModel : ViewModelBase
     private void CancelDownload()
     {
         _downloadCts?.Cancel();
+        IsPaused = false;
         StatusMessage = "Cancelling download...";
+    }
+
+    [RelayCommand]
+    private void PauseDownload()
+    {
+        _downloadService.PauseAllDownloads();
+        IsPaused = true;
+        StatusMessage = "Download paused";
+    }
+
+    [RelayCommand]
+    private void ResumeDownload()
+    {
+        _downloadService.ResumeAllDownloads();
+        IsPaused = false;
+        StatusMessage = "Download resumed";
     }
 
     [RelayCommand]

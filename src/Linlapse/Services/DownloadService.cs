@@ -14,11 +14,14 @@ public class DownloadService : IDisposable
     private readonly HttpClient _httpClient;
     private readonly SettingsService _settingsService;
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeDownloads = new();
+    private readonly ConcurrentDictionary<string, ManualResetEventSlim> _pauseEvents = new();
     private readonly SemaphoreSlim _downloadSemaphore;
 
     public event EventHandler<DownloadProgress>? DownloadProgressChanged;
     public event EventHandler<string>? DownloadCompleted;
     public event EventHandler<(string FileName, Exception Error)>? DownloadFailed;
+    public event EventHandler<string>? DownloadPaused;
+    public event EventHandler<string>? DownloadResumed;
 
     public DownloadService(SettingsService settingsService)
     {
@@ -29,7 +32,7 @@ public class DownloadService : IDisposable
     }
 
     /// <summary>
-    /// Download a file with progress reporting and resume support
+    /// Download a file with progress reporting, pause, and resume support
     /// </summary>
     public async Task<bool> DownloadFileAsync(
         string url,
@@ -40,6 +43,8 @@ public class DownloadService : IDisposable
         var fileName = Path.GetFileName(destinationPath);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _activeDownloads[fileName] = cts;
+        var pauseEvent = new ManualResetEventSlim(true); // Initially not paused
+        _pauseEvents[fileName] = pauseEvent;
 
         try
         {
@@ -104,6 +109,29 @@ public class DownloadService : IDisposable
 
             while ((bytesRead = await contentStream.ReadAsync(buffer, cts.Token)) > 0)
             {
+                // Check if paused - wait until resumed or cancelled
+                if (!pauseEvent.IsSet)
+                {
+                    downloadProgress.State = DownloadState.Paused;
+                    progress?.Report(downloadProgress);
+                    DownloadProgressChanged?.Invoke(this, downloadProgress);
+                    
+                    // Wait for resume signal or cancellation
+                    try
+                    {
+                        pauseEvent.Wait(cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw; // Rethrow to be handled by outer catch
+                    }
+                    
+                    downloadProgress.State = DownloadState.Downloading;
+                    // Reset timing for accurate speed calculation after resume
+                    startTime = DateTime.UtcNow;
+                    bytesAtStart = downloadProgress.BytesDownloaded;
+                }
+
                 await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cts.Token);
                 downloadProgress.BytesDownloaded += bytesRead;
 
@@ -167,6 +195,10 @@ public class DownloadService : IDisposable
         finally
         {
             _activeDownloads.TryRemove(fileName, out _);
+            if (_pauseEvents.TryRemove(fileName, out var removedPauseEvent))
+            {
+                removedPauseEvent.Dispose();
+            }
             _downloadSemaphore.Release();
         }
     }
@@ -204,10 +236,73 @@ public class DownloadService : IDisposable
     }
 
     /// <summary>
+    /// Pause a specific download
+    /// </summary>
+    public void PauseDownload(string fileName)
+    {
+        if (_pauseEvents.TryGetValue(fileName, out var pauseEvent))
+        {
+            pauseEvent.Reset(); // Signal to pause
+            DownloadPaused?.Invoke(this, fileName);
+            Log.Information("Download paused: {FileName}", fileName);
+        }
+    }
+
+    /// <summary>
+    /// Resume a specific download
+    /// </summary>
+    public void ResumeDownload(string fileName)
+    {
+        if (_pauseEvents.TryGetValue(fileName, out var pauseEvent))
+        {
+            pauseEvent.Set(); // Signal to resume
+            DownloadResumed?.Invoke(this, fileName);
+            Log.Information("Download resumed: {FileName}", fileName);
+        }
+    }
+
+    /// <summary>
+    /// Pause all active downloads
+    /// </summary>
+    public void PauseAllDownloads()
+    {
+        foreach (var kvp in _pauseEvents)
+        {
+            kvp.Value.Reset();
+            DownloadPaused?.Invoke(this, kvp.Key);
+        }
+    }
+
+    /// <summary>
+    /// Resume all paused downloads
+    /// </summary>
+    public void ResumeAllDownloads()
+    {
+        foreach (var kvp in _pauseEvents)
+        {
+            kvp.Value.Set();
+            DownloadResumed?.Invoke(this, kvp.Key);
+        }
+    }
+
+    /// <summary>
+    /// Check if a download is currently paused
+    /// </summary>
+    public bool IsDownloadPaused(string fileName)
+    {
+        return _pauseEvents.TryGetValue(fileName, out var pauseEvent) && !pauseEvent.IsSet;
+    }
+
+    /// <summary>
     /// Cancel a specific download
     /// </summary>
     public void CancelDownload(string fileName)
     {
+        // Resume first if paused, so the cancellation can be processed
+        if (_pauseEvents.TryGetValue(fileName, out var pauseEvent))
+        {
+            pauseEvent.Set();
+        }
         if (_activeDownloads.TryGetValue(fileName, out var cts))
         {
             cts.Cancel();
@@ -219,6 +314,11 @@ public class DownloadService : IDisposable
     /// </summary>
     public void CancelAllDownloads()
     {
+        // Resume all first so cancellations can be processed
+        foreach (var pauseEvent in _pauseEvents.Values)
+        {
+            pauseEvent.Set();
+        }
         foreach (var cts in _activeDownloads.Values)
         {
             cts.Cancel();

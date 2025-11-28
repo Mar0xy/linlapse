@@ -346,11 +346,26 @@
                                 <TextBlock Text="{Binding ProgressText}"
                                            Foreground="#a1a1aa"
                                            FontSize="12"/>
-                                <Button Content="Cancel"
-                                        Classes="secondary"
-                                        HorizontalAlignment="Right"
-                                        Command="{Binding CancelDownloadCommand}"
-                                        Padding="8,4"/>
+                                <StackPanel Orientation="Horizontal" 
+                                            HorizontalAlignment="Right"
+                                            Spacing="8">
+                                    <!-- Pause Button (visible when not paused) -->
+                                    <Button Content="⏸ Pause"
+                                            Classes="secondary"
+                                            Command="{Binding PauseDownloadCommand}"
+                                            IsVisible="{Binding !IsPaused}"
+                                            Padding="8,4"/>
+                                    <!-- Resume Button (visible when paused) -->
+                                    <Button Content="▶ Resume"
+                                            Classes="secondary"
+                                            Command="{Binding ResumeDownloadCommand}"
+                                            IsVisible="{Binding IsPaused}"
+                                            Padding="8,4"/>
+                                    <Button Content="Cancel"
+                                            Classes="secondary"
+                                            Command="{Binding CancelDownloadCommand}"
+                                            Padding="8,4"/>
+                                </StackPanel>
                             </Grid>
                         </StackPanel>
 
