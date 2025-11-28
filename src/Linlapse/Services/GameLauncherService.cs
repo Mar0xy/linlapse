@@ -520,11 +520,26 @@ public class GameLauncherService
     /// </summary>
     private static async Task RunWineCommandAsync(string winePath, string command, string args, string winePrefix)
     {
+        // Find the command in the same directory as wine
+        // e.g., if winePath is /usr/bin/wine, look for /usr/bin/wineboot
+        var wineDir = Path.GetDirectoryName(winePath);
+        var commandPath = !string.IsNullOrEmpty(wineDir) 
+            ? Path.Combine(wineDir, command) 
+            : command;
+        
+        // If the command doesn't exist in wine's directory, try it as a standalone command
+        if (!File.Exists(commandPath))
+        {
+            commandPath = command;
+        }
+        
+        Log.Debug("Running wine command: {Command} {Args}", commandPath, args);
+        
         var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = command,
+                FileName = commandPath,
                 Arguments = args,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -543,7 +558,7 @@ public class GameLauncherService
         {
             var error = await process.StandardError.ReadToEndAsync();
             Log.Warning("Wine command '{Command} {Args}' exited with code {ExitCode}: {Error}", 
-                command, args, process.ExitCode, error);
+                commandPath, args, process.ExitCode, error);
         }
     }
 
