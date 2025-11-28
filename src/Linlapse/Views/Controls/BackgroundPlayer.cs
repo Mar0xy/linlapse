@@ -494,11 +494,6 @@ public class BackgroundPlayer : UserControl, IDisposable
             _frameReady = false;
             _renderTimer?.Stop();
             
-            // Dispose the media first
-            _currentMedia?.Dispose();
-            _currentMedia = null;
-            
-            // Dispose and recreate MediaPlayer to release LibVLC internal caches
             if (_mediaPlayer != null)
             {
                 // Stop playback first
@@ -509,11 +504,11 @@ public class BackgroundPlayer : UserControl, IDisposable
                 
                 // Give LibVLC time to finish any pending callbacks
                 Thread.Sleep(100);
-                
-                _mediaPlayer.EndReached -= OnVideoEndReached;
-                _mediaPlayer.Dispose();
-                _mediaPlayer = null;
             }
+            
+            // Dispose the media after stopping playback
+            _currentMedia?.Dispose();
+            _currentMedia = null;
         }
         catch (Exception ex)
         {
