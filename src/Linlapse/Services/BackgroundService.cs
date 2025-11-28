@@ -14,6 +14,7 @@ public class BackgroundService : IDisposable
     private readonly GameService _gameService;
     private readonly SettingsService _settingsService;
     private readonly string _backgroundCacheDir;
+    private readonly string _iconCacheDir;
 
     public BackgroundService(GameService gameService, SettingsService settingsService)
     {
@@ -22,7 +23,9 @@ public class BackgroundService : IDisposable
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
         _backgroundCacheDir = Path.Combine(SettingsService.GetCacheDirectory(), "backgrounds");
+        _iconCacheDir = Path.Combine(SettingsService.GetCacheDirectory(), "icons");
         Directory.CreateDirectory(_backgroundCacheDir);
+        Directory.CreateDirectory(_iconCacheDir);
     }
 
     /// <summary>
@@ -202,7 +205,7 @@ public class BackgroundService : IDisposable
         catch { }
 
         var cacheFileName = $"{gameId}_icon{extension}";
-        var cachePath = Path.Combine(_backgroundCacheDir, cacheFileName);
+        var cachePath = Path.Combine(_iconCacheDir, cacheFileName);
 
         // Check if we have a cached version
         if (File.Exists(cachePath))

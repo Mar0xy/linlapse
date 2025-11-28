@@ -4,6 +4,7 @@
         xmlns:models="using:Linlapse.Models"
         xmlns:services="using:Linlapse.Services"
         xmlns:controls="using:Linlapse.Views.Controls"
+        xmlns:converters="using:Linlapse.Converters"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
@@ -14,6 +15,10 @@
         MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen"
         Background="#1a1a2e">
+
+    <Window.Resources>
+        <converters:FilePathToBitmapConverter x:Key="FilePathToBitmapConverter"/>
+    </Window.Resources>
 
     <Design.DataContext>
         <vm:MainWindowViewModel/>
@@ -119,7 +124,7 @@
                                         Margin="0,0,12,0">
                                     <!-- Show game icon if available, otherwise show emoji -->
                                     <Panel>
-                                        <Image Source="{Binding LogoImagePath}"
+                                        <Image Source="{Binding LogoImagePath, Converter={StaticResource FilePathToBitmapConverter}}"
                                                Stretch="UniformToFill"
                                                IsVisible="{Binding LogoImagePath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                         <TextBlock Text="🎯" 
