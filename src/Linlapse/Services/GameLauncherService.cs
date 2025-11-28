@@ -112,23 +112,17 @@ public class GameLauncherService
 
             Log.Information("Extracting Jadeite to {Path}", jadeiteDir);
 
-            // Extract jadeite.exe from the zip
-            using (var archive = ZipFile.OpenRead(zipPath))
+            // Extract all files from the zip (jadeite.exe, game_payload.dll, etc.)
+            ZipFile.ExtractToDirectory(zipPath, jadeiteDir, overwriteFiles: true);
+            
+            // Verify that jadeite.exe was extracted
+            if (!File.Exists(jadeitePath))
             {
-                var jadeiteEntry = archive.Entries.FirstOrDefault(e => 
-                    e.Name.Equals(JadeiteExeName, StringComparison.OrdinalIgnoreCase));
-                
-                if (jadeiteEntry != null)
-                {
-                    jadeiteEntry.ExtractToFile(jadeitePath, overwrite: true);
-                    Log.Information("Extracted {File} to {Path}", JadeiteExeName, jadeitePath);
-                }
-                else
-                {
-                    Log.Error("Could not find {File} in the downloaded archive", JadeiteExeName);
-                    return false;
-                }
+                Log.Error("Could not find {File} after extraction", JadeiteExeName);
+                return false;
             }
+            
+            Log.Information("Extracted Jadeite files to {Path}", jadeiteDir);
 
             // Clean up zip file
             File.Delete(zipPath);
@@ -237,37 +231,26 @@ public class GameLauncherService
         var settings = _settingsService.Settings;
         var gameSettings = settings.GameSpecificSettings.GetValueOrDefault(game.Id);
 
-        var winePrefix = gameSettings?.UseCustomWinePrefix == true
-            ? gameSettings.CustomWinePrefixPath
-            : settings.WinePrefixPath;
-
         // Determine whether to use Proton or Wine
         string winePath;
         bool isProton = false;
+        bool useProtonScript = false; // True when using the proton script (not wine binary inside Proton)
         
         if (settings.UseProton && !string.IsNullOrEmpty(settings.ProtonPath))
         {
-            // Proton path should point to the proton script or wine binary within Proton
-            var protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine64");
-            if (!File.Exists(protonWinePath))
+            // When Proton is enabled, always use the proton script (not wine binary inside Proton)
+            // The proton script handles all the Proton magic (DXVK, VKD3D, etc.)
+            var protonScriptPath = Path.Combine(settings.ProtonPath, "proton");
+            if (File.Exists(protonScriptPath))
             {
-                protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine");
-            }
-            if (!File.Exists(protonWinePath))
-            {
-                // Try proton script directly
-                protonWinePath = Path.Combine(settings.ProtonPath, "proton");
-            }
-            
-            if (File.Exists(protonWinePath))
-            {
-                winePath = protonWinePath;
+                winePath = protonScriptPath;
                 isProton = true;
-                Log.Information("Using Proton from {Path}", settings.ProtonPath);
+                useProtonScript = true;
+                Log.Information("Using Proton script from {Path}", protonScriptPath);
             }
             else
             {
-                Log.Warning("Proton path configured but wine binary not found at {Path}, falling back to Wine", settings.ProtonPath);
+                Log.Warning("Proton path configured but proton script not found at {Path}, falling back to Wine", settings.ProtonPath);
                 winePath = settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine";
             }
         }
@@ -276,17 +259,47 @@ public class GameLauncherService
             winePath = settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine";
         }
 
-        // Ensure wine prefix exists
+        // Determine wine prefix - use per-game prefix by default
+        var winePrefix = gameSettings?.UseCustomWinePrefix == true
+            ? gameSettings.CustomWinePrefixPath
+            : GetGameWinePrefixPath(game);
+
+        // Ensure wine prefix directory exists
         if (!string.IsNullOrEmpty(winePrefix))
         {
             Directory.CreateDirectory(winePrefix);
+        }
+
+        // Initialize wine prefix with required components (only for Wine, not Proton)
+        // Proton handles its own prefix initialization with DXVK, VKD3D, etc.
+        if (!isProton && !string.IsNullOrEmpty(winePrefix))
+        {
+            await EnsureWinePrefixInitializedAsync(winePrefix, winePath);
         }
 
         // Determine if we need to use Jadeite for this game
         var useJadeite = RequiresJadeite(game.GameType);
         string arguments;
         
-        if (useJadeite && IsJadeiteAvailable())
+        if (useProtonScript)
+        {
+            // Proton script uses: proton run "executable" [args]
+            if (useJadeite && IsJadeiteAvailable())
+            {
+                var jadeitePath = GetJaditePath();
+                arguments = $"run \"{jadeitePath}\" \"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+                Log.Information("Using Jadeite launcher with Proton script for {Game}", game.DisplayName);
+            }
+            else
+            {
+                if (useJadeite && !IsJadeiteAvailable())
+                {
+                    Log.Warning("Jadeite is required for {Game} but not installed. Download it from Settings.", game.DisplayName);
+                }
+                arguments = $"run \"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+            }
+        }
+        else if (useJadeite && IsJadeiteAvailable())
         {
             var jadeitePath = GetJaditePath();
             // Launch with Jadeite: wine jadeite.exe "game_executable.exe"
@@ -370,6 +383,225 @@ public class GameLauncherService
         return process;
     }
 
+    /// <summary>
+    /// Get the wine prefix path for a specific game
+    /// </summary>
+    private static string GetGameWinePrefixPath(GameInfo game)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        // Sanitize game name for use in path (remove invalid characters)
+        var safeName = string.Join("_", game.Name.Split(Path.GetInvalidFileNameChars()));
+        return Path.Combine(home, ".local", "share", "linlapse", "wine-prefixes", safeName);
+    }
+
+    /// <summary>
+    /// Get the path to winetricks (downloads if not present)
+    /// </summary>
+    private static string GetWinetricksPath()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return Path.Combine(home, ".local", "share", "linlapse", "winetricks");
+    }
+
+    /// <summary>
+    /// Download winetricks from the official repository
+    /// </summary>
+    private static async Task<bool> EnsureWinetricksDownloadedAsync()
+    {
+        const string winetricksUrl = "https://raw.githubusercontent.com/Winetricks/winetricks/refs/heads/master/src/winetricks";
+        var winetricksPath = GetWinetricksPath();
+
+        // Check if already downloaded
+        if (File.Exists(winetricksPath))
+        {
+            return true;
+        }
+
+        Log.Information("Downloading winetricks from {Url}", winetricksUrl);
+
+        try
+        {
+            // Ensure directory exists
+            var directory = Path.GetDirectoryName(winetricksPath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
+            
+            var content = await httpClient.GetStringAsync(winetricksUrl);
+            await File.WriteAllTextAsync(winetricksPath, content);
+
+            // Make it executable (chmod +x)
+            var chmodProcess = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "chmod",
+                    Arguments = $"+x \"{winetricksPath}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+            chmodProcess.Start();
+            await chmodProcess.WaitForExitAsync();
+
+            Log.Information("Winetricks downloaded successfully to {Path}", winetricksPath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to download winetricks");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Ensure the wine prefix is initialized with required components
+    /// </summary>
+    private async Task EnsureWinePrefixInitializedAsync(string winePrefix, string winePath)
+    {
+        // Check if prefix is already initialized (has system.reg file)
+        var systemRegPath = Path.Combine(winePrefix, "system.reg");
+        var markerPath = Path.Combine(winePrefix, ".linlapse_initialized");
+        
+        if (File.Exists(systemRegPath) && File.Exists(markerPath))
+        {
+            Log.Debug("Wine prefix already initialized: {Prefix}", winePrefix);
+            return;
+        }
+
+        Log.Information("Initializing wine prefix: {Prefix}", winePrefix);
+
+        try
+        {
+            // Step 1: Initialize the prefix with wineboot
+            await RunWineCommandAsync(winePath, "wineboot", "--init", winePrefix);
+            Log.Information("Wine prefix created with wineboot");
+
+            // Step 2: Download winetricks if needed and install required components
+            if (await EnsureWinetricksDownloadedAsync())
+            {
+                Log.Information("Installing wine components with winetricks...");
+                
+                var winetricksPath = GetWinetricksPath();
+                
+                // Install corefonts (required for proper text rendering)
+                await RunWinetricksAsync(winetricksPath, winePrefix, winePath, "corefonts");
+                
+                // Install DXVK (DirectX 9/10/11 to Vulkan translation)
+                await RunWinetricksAsync(winetricksPath, winePrefix, winePath, "dxvk");
+                
+                // Install VKD3D (DirectX 12 to Vulkan translation)
+                await RunWinetricksAsync(winetricksPath, winePrefix, winePath, "vkd3d");
+                
+                Log.Information("Wine components installed successfully");
+            }
+            else
+            {
+                Log.Warning("Failed to download winetricks. Games may not run correctly without DXVK, VKD3D, and corefonts.");
+            }
+
+            // Create marker file to indicate prefix is initialized
+            await File.WriteAllTextAsync(markerPath, $"Initialized by Linlapse on {DateTime.UtcNow:O}");
+            Log.Information("Wine prefix initialization complete: {Prefix}", winePrefix);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to initialize wine prefix: {Prefix}", winePrefix);
+            // Don't throw - allow the game to try to launch anyway
+        }
+    }
+
+    /// <summary>
+    /// Run a wine command with the specified prefix
+    /// </summary>
+    private static async Task RunWineCommandAsync(string winePath, string command, string args, string winePrefix)
+    {
+        // Find the command in the same directory as wine
+        // e.g., if winePath is /usr/bin/wine, look for /usr/bin/wineboot
+        var wineDir = Path.GetDirectoryName(winePath);
+        var commandPath = !string.IsNullOrEmpty(wineDir) 
+            ? Path.Combine(wineDir, command) 
+            : command;
+        
+        // If the command doesn't exist in wine's directory, try it as a standalone command
+        if (!File.Exists(commandPath))
+        {
+            commandPath = command;
+        }
+        
+        Log.Debug("Running wine command: {Command} {Args}", commandPath, args);
+        
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = commandPath,
+                Arguments = args,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+        
+        process.StartInfo.Environment["WINEPREFIX"] = winePrefix;
+        process.StartInfo.Environment["WINE"] = winePath;
+        process.StartInfo.Environment["WINE64"] = winePath + "64";
+        
+        process.Start();
+        await process.WaitForExitAsync();
+        
+        if (process.ExitCode != 0)
+        {
+            var error = await process.StandardError.ReadToEndAsync();
+            Log.Warning("Wine command '{Command} {Args}' exited with code {ExitCode}: {Error}", 
+                commandPath, args, process.ExitCode, error);
+        }
+    }
+
+    /// <summary>
+    /// Run winetricks with the specified prefix and verb
+    /// </summary>
+    private static async Task RunWinetricksAsync(string winetricksPath, string winePrefix, string winePath, string verb)
+    {
+        Log.Debug("Running winetricks {Verb} for prefix {Prefix} with wine {Wine}", verb, winePrefix, winePath);
+        
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = winetricksPath,
+                Arguments = $"-q {verb}",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+        
+        process.StartInfo.Environment["WINEPREFIX"] = winePrefix;
+        process.StartInfo.Environment["WINE"] = winePath;
+        process.StartInfo.Environment["WINE64"] = winePath + "64";
+        
+        process.Start();
+        await process.WaitForExitAsync();
+        
+        if (process.ExitCode != 0)
+        {
+            var error = await process.StandardError.ReadToEndAsync();
+            Log.Warning("winetricks {Verb} exited with code {ExitCode}: {Error}", 
+                verb, process.ExitCode, error);
+        }
+        else
+        {
+            Log.Debug("winetricks {Verb} completed successfully", verb);
+        }
+    }
+
     private void OnGameExited(GameInfo game)
     {
         if (_runningGames.TryGetValue(game.Id, out var process))
@@ -415,23 +647,25 @@ public class GameLauncherService
             // Check if Proton is configured and should be used
             if (settings.UseProton && !string.IsNullOrEmpty(settings.ProtonPath))
             {
-                // Look for wine binary within Proton
-                var protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine64");
-                if (!File.Exists(protonWinePath))
+                // When Proton is enabled, always use the proton script
+                var protonScriptPath = Path.Combine(settings.ProtonPath, "proton");
+                if (File.Exists(protonScriptPath))
                 {
-                    protonWinePath = Path.Combine(settings.ProtonPath, "files", "bin", "wine");
-                }
-                
-                if (File.Exists(protonWinePath))
-                {
-                    winePath = protonWinePath;
-                    isProton = true;
+                    // For version info with Proton, we check if the script exists and report Proton version from path
+                    info.IsInstalled = true;
+                    info.IsProton = true;
+                    info.Path = protonScriptPath;
+                    
+                    // Try to extract version from the Proton path (e.g., "Proton 9.0" from path)
+                    var protonDirName = Path.GetFileName(settings.ProtonPath);
+                    info.Version = $"Proton ({protonDirName})";
+                    return info;
                 }
                 else
                 {
-                    // Proton path configured but wine not found
+                    // Proton path configured but script not found
                     info.IsInstalled = false;
-                    info.Version = $"Proton configured but wine not found at {settings.ProtonPath}";
+                    info.Version = $"Proton configured but proton script not found at {settings.ProtonPath}";
                     return info;
                 }
             }

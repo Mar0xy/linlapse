@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using Linlapse.Models;
 using Serilog;
 using SharpCompress.Archives;
@@ -11,11 +12,16 @@ namespace Linlapse.Services;
 /// <summary>
 /// Service for installing game files
 /// </summary>
-public class InstallationService
+public partial class InstallationService
 {
     private readonly SettingsService _settingsService;
     private readonly DownloadService _downloadService;
     private readonly GameService _gameService;
+
+    // Regex for parsing 7z progress output - compiled once and reused
+    // Matches percentage followed by optional filename, terminated by end of string, whitespace, or backspaces
+    [GeneratedRegex(@"(\d+)%\s*(?:-\s*(.+?))?(?:\s*$|[\x08]+|\s+\x08)", RegexOptions.Compiled)]
+    private static partial Regex SevenZipProgressRegex();
 
     public event EventHandler<InstallProgress>? InstallProgressChanged;
     public event EventHandler<string>? InstallCompleted;
@@ -75,9 +81,9 @@ public class InstallationService
                     throw new NotSupportedException($"Archive format not supported: {extension}");
             }
 
-            // Update game info
+            // Update game info - UpdateGameInstallPath will set the state based on whether
+            // the game executable exists
             _gameService.UpdateGameInstallPath(gameId, installPath);
-            _gameService.UpdateGameState(gameId, GameState.Ready);
 
             installProgress.State = InstallState.Completed;
             progress?.Report(installProgress);
@@ -325,45 +331,101 @@ public class InstallationService
             }
         };
 
-        var lastProgressReport = DateTime.UtcNow;
-        var progressReportInterval = TimeSpan.FromMilliseconds(250);
-
-        process.OutputDataReceived += (sender, e) =>
-        {
-            if (string.IsNullOrEmpty(e.Data)) return;
-
-            // Parse 7z progress output (format: "  X% - filename" or "XX%")
-            var line = e.Data.Trim();
-            
-            // Try to extract percentage
-            var percentMatch = System.Text.RegularExpressions.Regex.Match(line, @"(\d+)%");
-            if (percentMatch.Success && int.TryParse(percentMatch.Groups[1].Value, out var percent))
-            {
-                var estimatedProcessedBytes = (long)(installProgress.TotalBytes * percent / 100.0);
-                installProgress.ProcessedBytes = estimatedProcessedBytes;
-                installProgress.ProcessedFiles = (int)(installProgress.TotalFiles * percent / 100.0);
-                
-                // Extract filename if present
-                var dashIndex = line.IndexOf(" - ", StringComparison.Ordinal);
-                if (dashIndex > 0 && dashIndex + 3 < line.Length)
-                {
-                    installProgress.CurrentFile = line[(dashIndex + 3)..];
-                }
-
-                var now = DateTime.UtcNow;
-                if (now - lastProgressReport >= progressReportInterval)
-                {
-                    progress?.Report(installProgress);
-                    InstallProgressChanged?.Invoke(this, installProgress);
-                    lastProgressReport = now;
-                }
-            }
-        };
-
         try
         {
             process.Start();
-            process.BeginOutputReadLine();
+
+            // Read stdout in a background task to handle 7z's in-place progress updates
+            // 7z uses backspaces (\b) to erase and rewrite progress, not newlines
+            // BeginOutputReadLine only fires on newlines, so we need to read in chunks
+            var stdoutTask = Task.Run(async () =>
+            {
+                const int ReadBufferSize = 4096; // Larger buffer for better I/O performance
+                var lastProgressReport = DateTime.UtcNow;
+                var progressReportInterval = TimeSpan.FromMilliseconds(250);
+                var buffer = new char[ReadBufferSize];
+                var reader = process.StandardOutput;
+                var percentRegex = SevenZipProgressRegex();
+                var accumulated = new System.Text.StringBuilder(ReadBufferSize);
+                var lastPercent = -1;
+
+                try
+                {
+                    int charsRead;
+                    while ((charsRead = await reader.ReadAsync(buffer.AsMemory(), cancellationToken)) > 0)
+                    {
+                        // Check for cancellation
+                        cancellationToken.ThrowIfCancellationRequested();
+                        
+                        // Accumulate the chunk
+                        accumulated.Append(buffer, 0, charsRead);
+                        
+                        // Only process when we have enough data or hit a potential progress boundary
+                        // 7z progress lines are typically short, so process when we see backspaces or have > 256 chars
+                        var content = accumulated.ToString();
+                        if (content.Length > 256 || content.Contains('\x08') || content.Contains('\n'))
+                        {
+                            // Find all percentage matches in accumulated content
+                            var matches = percentRegex.Matches(content);
+                            foreach (Match match in matches)
+                            {
+                                if (int.TryParse(match.Groups[1].Value, out var percent) && percent != lastPercent)
+                                {
+                                    lastPercent = percent;
+                                    var estimatedProcessedBytes = (long)(installProgress.TotalBytes * percent / 100.0);
+                                    installProgress.ProcessedBytes = estimatedProcessedBytes;
+                                    installProgress.ProcessedFiles = (int)(installProgress.TotalFiles * percent / 100.0);
+
+                                    // Extract filename if present (group 2)
+                                    if (match.Groups[2].Success && !string.IsNullOrWhiteSpace(match.Groups[2].Value))
+                                    {
+                                        installProgress.CurrentFile = match.Groups[2].Value.Trim();
+                                    }
+
+                                    var now = DateTime.UtcNow;
+                                    if (now - lastProgressReport >= progressReportInterval)
+                                    {
+                                        progress?.Report(installProgress);
+                                        InstallProgressChanged?.Invoke(this, installProgress);
+                                        lastProgressReport = now;
+                                    }
+                                }
+                            }
+                            
+                            // Clear accumulated content after processing
+                            accumulated.Clear();
+                        }
+                    }
+                    
+                    // Process any remaining content
+                    if (accumulated.Length > 0)
+                    {
+                        var content = accumulated.ToString();
+                        var matches = percentRegex.Matches(content);
+                        foreach (Match match in matches)
+                        {
+                            if (int.TryParse(match.Groups[1].Value, out var percent) && percent != lastPercent)
+                            {
+                                lastPercent = percent;
+                                installProgress.ProcessedBytes = (long)(installProgress.TotalBytes * percent / 100.0);
+                                installProgress.ProcessedFiles = (int)(installProgress.TotalFiles * percent / 100.0);
+                                if (match.Groups[2].Success && !string.IsNullOrWhiteSpace(match.Groups[2].Value))
+                                {
+                                    installProgress.CurrentFile = match.Groups[2].Value.Trim();
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected when cancellation is requested
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Error reading 7z progress output");
+                }
+            }, cancellationToken);
 
             // Wait for process to complete or cancellation
             using var registration = cancellationToken.Register(() =>
@@ -379,6 +441,9 @@ public class InstallationService
             });
 
             await process.WaitForExitAsync(cancellationToken);
+            
+            // Wait for stdout reading to complete (exceptions are already logged inside the task)
+            await stdoutTask;
 
             if (process.ExitCode != 0)
             {

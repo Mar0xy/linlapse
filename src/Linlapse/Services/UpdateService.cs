@@ -17,6 +17,9 @@ public class UpdateService : IDisposable
     private readonly DownloadService _downloadService;
     private readonly InstallationService _installationService;
 
+    // Common version prefixes to strip during normalization (ordered by specificity)
+    private static readonly string[] VersionPrefixes = { "version", "ver", "v" };
+
     public event EventHandler<UpdateInfo>? UpdateAvailable;
     public event EventHandler<UpdateProgress>? UpdateProgressChanged;
     public event EventHandler<string>? UpdateCompleted;
@@ -58,12 +61,24 @@ public class UpdateService : IDisposable
             var response = await _httpClient.GetStringAsync(apiUrl, cancellationToken);
             var updateInfo = ParseUpdateResponse(game, response);
 
-            if (updateInfo != null && updateInfo.HasUpdate)
+            if (updateInfo != null)
             {
-                _gameService.UpdateGameState(gameId, GameState.NeedsUpdate);
-                UpdateAvailable?.Invoke(this, updateInfo);
-                Log.Information("Update available for {GameId}: {CurrentVersion} -> {LatestVersion}",
-                    gameId, game.Version, updateInfo.LatestVersion);
+                Log.Debug("Version comparison for {GameId}: Current={CurrentVersion}, Latest={LatestVersion}, HasUpdate={HasUpdate}",
+                    gameId, game.Version, updateInfo.LatestVersion, updateInfo.HasUpdate);
+                
+                if (updateInfo.HasUpdate)
+                {
+                    _gameService.UpdateGameState(gameId, GameState.NeedsUpdate);
+                    UpdateAvailable?.Invoke(this, updateInfo);
+                    Log.Information("Update available for {GameId}: {CurrentVersion} -> {LatestVersion}",
+                        gameId, game.Version, updateInfo.LatestVersion);
+                }
+                else if (game.State == GameState.NeedsUpdate)
+                {
+                    // Reset state if game was marked as needing update but no longer does
+                    _gameService.UpdateGameState(gameId, GameState.Ready);
+                    Log.Debug("Reset game state for {GameId} - no update needed", gameId);
+                }
             }
 
             return updateInfo;
@@ -552,7 +567,8 @@ public class UpdateService : IDisposable
                 }
 
                 updateInfo.HasUpdate = !string.IsNullOrEmpty(updateInfo.LatestVersion) &&
-                                       updateInfo.LatestVersion != game.Version;
+                                       !string.IsNullOrEmpty(game.Version) &&
+                                       IsNewerVersion(updateInfo.LatestVersion, game.Version);
 
                 return updateInfo;
             }
@@ -563,6 +579,116 @@ public class UpdateService : IDisposable
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Compare two version strings to determine if the new version is newer than the current version.
+    /// Handles semantic versions like "8.5.0", "7.8.0", "1.0.0.1234", "v1.2.3", etc.
+    /// </summary>
+    private static bool IsNewerVersion(string newVersion, string currentVersion)
+    {
+        if (string.IsNullOrEmpty(newVersion) || string.IsNullOrEmpty(currentVersion))
+            return false;
+
+        // Normalize both versions for comparison
+        var normalizedNew = NormalizeVersion(newVersion);
+        var normalizedCurrent = NormalizeVersion(currentVersion);
+
+        // Try to parse as System.Version first (handles most cases)
+        if (Version.TryParse(normalizedNew, out var newVer) &&
+            Version.TryParse(normalizedCurrent, out var currentVer))
+        {
+            return newVer > currentVer;
+        }
+
+        // Fallback: compare version parts manually using only dot separator
+        // This handles semantic versioning more correctly
+        var newParts = normalizedNew.Split('.');
+        var currentParts = normalizedCurrent.Split('.');
+        var maxLength = Math.Max(newParts.Length, currentParts.Length);
+
+        for (int i = 0; i < maxLength; i++)
+        {
+            var newPart = i < newParts.Length ? newParts[i] : "0";
+            var currentPart = i < currentParts.Length ? currentParts[i] : "0";
+
+            // Try numeric comparison first
+            if (int.TryParse(newPart, out var newNum) && int.TryParse(currentPart, out var currentNum))
+            {
+                if (newNum > currentNum) return true;
+                if (newNum < currentNum) return false;
+            }
+            else
+            {
+                // Fall back to string comparison for non-numeric parts
+                var comparison = string.Compare(newPart, currentPart, StringComparison.OrdinalIgnoreCase);
+                if (comparison > 0) return true;
+                if (comparison < 0) return false;
+            }
+        }
+
+        return false; // Versions are equal
+    }
+
+    /// <summary>
+    /// Normalize a version string for comparison.
+    /// Removes common prefixes and extracts the numeric version parts.
+    /// </summary>
+    private static string NormalizeVersion(string version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+            return "0.0";
+
+        // Remove common version prefixes (case-insensitive)
+        var normalized = version.Trim();
+        
+        foreach (var prefix in VersionPrefixes)
+        {
+            if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized[prefix.Length..].TrimStart();
+                break; // Only remove one prefix
+            }
+        }
+        
+        // Split on dots only for the main version parts
+        // Handle pre-release identifiers (e.g., "1.0.0-beta") by taking only the version part
+        var dashIndex = normalized.IndexOf('-');
+        if (dashIndex > 0)
+        {
+            normalized = normalized[..dashIndex];
+        }
+        
+        var parts = normalized.Split('.');
+        var numericParts = new List<string>();
+        
+        foreach (var part in parts)
+        {
+            // Extract leading numeric portion from each part
+            var numericPart = new string(part.TakeWhile(char.IsDigit).ToArray());
+            if (!string.IsNullOrEmpty(numericPart))
+            {
+                numericParts.Add(numericPart);
+            }
+            else
+            {
+                break; // Stop at first non-numeric part
+            }
+        }
+
+        // System.Version requires at least 2 parts (major.minor)
+        while (numericParts.Count < 2)
+        {
+            numericParts.Add("0");
+        }
+
+        // System.Version supports at most 4 parts (major.minor.build.revision)
+        if (numericParts.Count > 4)
+        {
+            numericParts = numericParts.Take(4).ToList();
+        }
+
+        return string.Join(".", numericParts);
     }
 
     private async Task<PreloadInfo?> GetPreloadInfoAsync(string gameId, CancellationToken cancellationToken)

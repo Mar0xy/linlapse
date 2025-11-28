@@ -247,17 +247,21 @@ public class GameService
         if (game != null)
         {
             game.InstallPath = installPath;
-            game.IsInstalled = Directory.Exists(installPath);
+            // Check if both directory exists AND game executable is present
+            game.IsInstalled = Directory.Exists(installPath) && IsGameDirectory(installPath, game);
             game.State = game.IsInstalled ? GameState.Ready : GameState.NotInstalled;
             SaveGames();
             GameStateChanged?.Invoke(this, game);
-            Log.Information("Game {Id} install path set to {Path}", id, installPath);
+            Log.Information("Game {Id} install path set to {Path}, IsInstalled: {IsInstalled}", id, installPath, game.IsInstalled);
         }
     }
 
     public async Task ScanForInstalledGamesAsync()
     {
         Log.Information("Scanning for installed games...");
+
+        // First, verify that already-installed games still have their files
+        VerifyInstalledGames();
 
         var searchPaths = new List<string>
         {
@@ -276,6 +280,27 @@ public class GameService
 
         SaveGames();
         GamesListChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Verify that games marked as installed still have their executable files
+    /// </summary>
+    private void VerifyInstalledGames()
+    {
+        foreach (var game in _games.Where(g => g.IsInstalled))
+        {
+            // Check if install path exists and game executable is present
+            if (string.IsNullOrEmpty(game.InstallPath) || 
+                !Directory.Exists(game.InstallPath) ||
+                !IsGameDirectory(game.InstallPath, game))
+            {
+                Log.Information("Game {Name} no longer found at {Path}, marking as not installed", 
+                    game.DisplayName, game.InstallPath);
+                game.IsInstalled = false;
+                game.State = GameState.NotInstalled;
+                game.InstallPath = string.Empty;
+            }
+        }
     }
 
     private Task ScanDirectoryForGamesAsync(string basePath)

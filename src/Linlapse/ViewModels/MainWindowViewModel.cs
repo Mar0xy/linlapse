@@ -22,6 +22,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly BackgroundService _backgroundService;
 
     private CancellationTokenSource? _downloadCts;
+    private bool _isRestoringSelection;
 
     [ObservableProperty]
     private GameInfo? _selectedGame;
@@ -173,8 +174,8 @@ public partial class MainWindowViewModel : ViewModelBase
         // Subscribe to events
         _gameService.GamesListChanged += (_, _) => RefreshGamesCollection();
         _gameService.GameStateChanged += (_, game) => UpdateGameInCollection(game);
-        _launcherService.GameStarted += (_, _) => IsGameRunning = true;
-        _launcherService.GameStopped += (_, _) => IsGameRunning = false;
+        _launcherService.GameStarted += (_, game) => OnGameStarted(game);
+        _launcherService.GameStopped += (_, game) => OnGameStopped(game);
 
         _downloadService.DownloadProgressChanged += OnDownloadProgress;
         _installationService.InstallProgressChanged += OnInstallProgress;
@@ -324,13 +325,41 @@ public partial class MainWindowViewModel : ViewModelBase
             var index = Games.IndexOf(existingGame);
             var wasSelected = SelectedGame?.Id == updatedGame.Id;
             
-            Games[index] = updatedGame;
-
-            // Restore selection if this was the selected game
-            if (wasSelected)
+            // Set flag BEFORE replacing the item to prevent selection change side effects
+            // When we replace the item, the UI may fire selection change events
+            _isRestoringSelection = true;
+            try
             {
-                SelectedGame = updatedGame;
+                Games[index] = updatedGame;
+
+                // Restore selection if this was the selected game
+                if (wasSelected)
+                {
+                    SelectedGame = updatedGame;
+                }
             }
+            finally
+            {
+                _isRestoringSelection = false;
+            }
+        }
+    }
+
+    private void OnGameStarted(GameInfo game)
+    {
+        // Only update IsGameRunning if the started game is the currently selected one
+        if (SelectedGame?.Id == game.Id)
+        {
+            IsGameRunning = true;
+        }
+    }
+
+    private void OnGameStopped(GameInfo game)
+    {
+        // Only update IsGameRunning if the stopped game is the currently selected one
+        if (SelectedGame?.Id == game.Id)
+        {
+            IsGameRunning = false;
         }
     }
 
@@ -344,7 +373,16 @@ public partial class MainWindowViewModel : ViewModelBase
     private void OnInstallProgress(object? sender, InstallProgress progress)
     {
         ProgressPercent = progress.PercentComplete;
-        ProgressText = $"Installing: {progress.ProcessedFiles}/{progress.TotalFiles} files";
+        
+        // For extraction, just show "Extracting..." without file counts since 7z progress is unreliable
+        if (progress.State == InstallState.Extracting)
+        {
+            ProgressText = "Extracting...";
+        }
+        else
+        {
+            ProgressText = $"Installing: {progress.ProcessedFiles}/{progress.TotalFiles} files";
+        }
     }
 
     private void OnRepairProgress(object? sender, RepairProgress progress)
@@ -638,7 +676,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     GameDownloadState.Downloading => $"Downloading: {p.PercentComplete:F1}% ({speedMb:F1} MB/s)",
                     GameDownloadState.DownloadingVoicePacks => $"Downloading voice packs: {p.PercentComplete:F1}%",
                     GameDownloadState.Verifying => "Verifying downloaded files...",
-                    GameDownloadState.Extracting => $"Extracting: {p.ExtractedFiles}/{p.TotalFiles} files",
+                    GameDownloadState.Extracting => "Extracting...",
                     GameDownloadState.Cleanup => "Cleaning up...",
                     GameDownloadState.Completed => "Installation complete!",
                     GameDownloadState.Failed => $"Failed: {p.ErrorMessage}",
@@ -837,9 +875,24 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSelectedGameDownloading));
         OnPropertyChanged(nameof(IsOtherGameDownloading));
 
+        // Always update IsGameRunning when selection changes (even during restore)
         if (value != null)
         {
             IsGameRunning = _launcherService.IsGameRunning(value.Id);
+        }
+        else
+        {
+            IsGameRunning = false;
+        }
+
+        // Skip heavy operations if we're just restoring selection after a game state update
+        if (_isRestoringSelection)
+        {
+            return;
+        }
+
+        if (value != null)
+        {
             AvailableUpdate = null;
             IsPreloadAvailable = false;
             CacheInfo = null;
