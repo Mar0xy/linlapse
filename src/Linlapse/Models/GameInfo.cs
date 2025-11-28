@@ -24,6 +24,7 @@ public class GameInfo : INotifyPropertyChanged
     private DateTime? _lastPlayed;
     private TimeSpan _totalPlayTime;
     private GameState _state = GameState.NotInstalled;
+    private bool _isDownloading;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -120,6 +121,17 @@ public class GameInfo : INotifyPropertyChanged
     {
         get => _state;
         set { if (_state != value) { _state = value; OnPropertyChanged(); } }
+    }
+
+    /// <summary>
+    /// Indicates if the game is currently being downloaded
+    /// This is a UI-only property (not serialized) to track download state
+    /// </summary>
+    [JsonIgnore]
+    public bool IsDownloading
+    {
+        get => _isDownloading;
+        set { if (_isDownloading != value) { _isDownloading = value; OnPropertyChanged(); } }
     }
 }
 
