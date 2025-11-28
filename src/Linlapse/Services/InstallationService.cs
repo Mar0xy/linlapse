@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using Linlapse.Models;
 using Serilog;
 using SharpCompress.Archives;
@@ -11,11 +12,16 @@ namespace Linlapse.Services;
 /// <summary>
 /// Service for installing game files
 /// </summary>
-public class InstallationService
+public partial class InstallationService
 {
     private readonly SettingsService _settingsService;
     private readonly DownloadService _downloadService;
     private readonly GameService _gameService;
+
+    // Regex for parsing 7z progress output - compiled once and reused
+    // Matches percentage followed by optional filename, terminated by end of string, whitespace, or backspaces
+    [GeneratedRegex(@"(\d+)%\s*(?:-\s*(.+?))?(?:\s*$|[\x08]+|\s+\x08)", RegexOptions.Compiled)]
+    private static partial Regex SevenZipProgressRegex();
 
     public event EventHandler<InstallProgress>? InstallProgressChanged;
     public event EventHandler<string>? InstallCompleted;
@@ -339,20 +345,22 @@ public class InstallationService
                 var progressReportInterval = TimeSpan.FromMilliseconds(250);
                 var buffer = new char[ReadBufferSize];
                 var reader = process.StandardOutput;
-                // Match percentage followed by optional filename, terminated by end of string, whitespace, or backspaces
-                var percentRegex = new System.Text.RegularExpressions.Regex(@"(\d+)%\s*(?:-\s*(.+?))?(?:\s*$|[\x08]+|\s+\x08)", System.Text.RegularExpressions.RegexOptions.Compiled);
+                var percentRegex = SevenZipProgressRegex();
 
                 try
                 {
                     int charsRead;
-                    while ((charsRead = await reader.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    while ((charsRead = await reader.ReadAsync(buffer.AsMemory(), cancellationToken)) > 0)
                     {
+                        // Check for cancellation
+                        cancellationToken.ThrowIfCancellationRequested();
+                        
                         // Convert buffer to string and search for percentage patterns
                         var chunk = new string(buffer, 0, charsRead);
                         
                         // Find all percentage matches in this chunk
                         var matches = percentRegex.Matches(chunk);
-                        foreach (System.Text.RegularExpressions.Match match in matches)
+                        foreach (Match match in matches)
                         {
                             if (int.TryParse(match.Groups[1].Value, out var percent))
                             {

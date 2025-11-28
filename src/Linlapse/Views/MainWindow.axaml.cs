@@ -1,6 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.VisualTree;
 using Linlapse.Views.Controls;
 
 namespace Linlapse.Views;
@@ -13,7 +12,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         
-        // Handle window closing to properly dispose LibVLC resources
+        // Handle window closing to properly dispose LibVLC resources and clean up event handlers
         Closing += OnWindowClosing;
         
         // Prevent right-click from changing selection in the game list
@@ -40,20 +39,25 @@ public partial class MainWindow : Window
         // If we saved a selection from a right-click, restore it
         if (_savedSelection != null && e.InitialPressMouseButton == MouseButton.Right)
         {
+            // Capture the value to use in the async callback
+            var selectionToRestore = _savedSelection;
+            _savedSelection = null;
+            
             // Use Dispatcher to restore selection after the ListBox has processed the event
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                if (_savedSelection != null)
-                {
-                    GameListBox.SelectedItem = _savedSelection;
-                    _savedSelection = null;
-                }
+                GameListBox.SelectedItem = selectionToRestore;
             });
         }
     }
 
     private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
     {
+        // Unsubscribe from event handlers to prevent memory leaks
+        Closing -= OnWindowClosing;
+        GameListBox.RemoveHandler(PointerPressedEvent, OnGameListPointerPressed);
+        GameListBox.RemoveHandler(PointerReleasedEvent, OnGameListPointerReleased);
+        
         // Dispose the background player to stop video and clean up LibVLC
         if (BackgroundPlayer != null)
         {

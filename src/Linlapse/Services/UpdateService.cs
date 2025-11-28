@@ -568,23 +568,28 @@ public class UpdateService : IDisposable
 
     /// <summary>
     /// Compare two version strings to determine if the new version is newer than the current version.
-    /// Handles versions like "8.5.0", "7.8.0", "1.0.0.1234", etc.
+    /// Handles semantic versions like "8.5.0", "7.8.0", "1.0.0.1234", "v1.2.3", etc.
     /// </summary>
     private static bool IsNewerVersion(string newVersion, string currentVersion)
     {
         if (string.IsNullOrEmpty(newVersion) || string.IsNullOrEmpty(currentVersion))
             return false;
 
+        // Normalize both versions for comparison
+        var normalizedNew = NormalizeVersion(newVersion);
+        var normalizedCurrent = NormalizeVersion(currentVersion);
+
         // Try to parse as System.Version first (handles most cases)
-        if (Version.TryParse(NormalizeVersion(newVersion), out var newVer) &&
-            Version.TryParse(NormalizeVersion(currentVersion), out var currentVer))
+        if (Version.TryParse(normalizedNew, out var newVer) &&
+            Version.TryParse(normalizedCurrent, out var currentVer))
         {
             return newVer > currentVer;
         }
 
-        // Fallback: compare version parts manually
-        var newParts = newVersion.Split('.', '-', '_');
-        var currentParts = currentVersion.Split('.', '-', '_');
+        // Fallback: compare version parts manually using only dot separator
+        // This handles semantic versioning more correctly
+        var newParts = normalizedNew.Split('.');
+        var currentParts = normalizedCurrent.Split('.');
         var maxLength = Math.Max(newParts.Length, currentParts.Length);
 
         for (int i = 0; i < maxLength; i++)
@@ -600,7 +605,7 @@ public class UpdateService : IDisposable
             }
             else
             {
-                // Fall back to string comparison
+                // Fall back to string comparison for non-numeric parts
                 var comparison = string.Compare(newPart, currentPart, StringComparison.OrdinalIgnoreCase);
                 if (comparison > 0) return true;
                 if (comparison < 0) return false;
@@ -611,20 +616,41 @@ public class UpdateService : IDisposable
     }
 
     /// <summary>
-    /// Normalize a version string for System.Version parsing
+    /// Normalize a version string for comparison.
+    /// Removes common prefixes and extracts the numeric version parts.
     /// </summary>
     private static string NormalizeVersion(string version)
     {
-        // Remove any non-version prefixes like "v" or "V"
-        version = version.TrimStart('v', 'V');
+        if (string.IsNullOrWhiteSpace(version))
+            return "0.0";
+
+        // Remove common version prefixes (case-insensitive)
+        var prefixes = new[] { "version", "ver", "v" };
+        var normalized = version.Trim();
         
-        // Split and take only numeric parts separated by dots
-        var parts = version.Split('.');
+        foreach (var prefix in prefixes)
+        {
+            if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized[prefix.Length..].TrimStart();
+                break; // Only remove one prefix
+            }
+        }
+        
+        // Split on dots only for the main version parts
+        // Handle pre-release identifiers (e.g., "1.0.0-beta") by taking only the version part
+        var dashIndex = normalized.IndexOf('-');
+        if (dashIndex > 0)
+        {
+            normalized = normalized[..dashIndex];
+        }
+        
+        var parts = normalized.Split('.');
         var numericParts = new List<string>();
         
         foreach (var part in parts)
         {
-            // Extract leading numeric portion
+            // Extract leading numeric portion from each part
             var numericPart = new string(part.TakeWhile(char.IsDigit).ToArray());
             if (!string.IsNullOrEmpty(numericPart))
             {
@@ -642,7 +668,7 @@ public class UpdateService : IDisposable
             numericParts.Add("0");
         }
 
-        // System.Version supports at most 4 parts
+        // System.Version supports at most 4 parts (major.minor.build.revision)
         if (numericParts.Count > 4)
         {
             numericParts = numericParts.Take(4).ToList();
