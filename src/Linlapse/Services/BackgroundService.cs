@@ -15,6 +15,7 @@ public class BackgroundService : IDisposable
     private readonly SettingsService _settingsService;
     private readonly string _backgroundCacheDir;
     private readonly string _iconCacheDir;
+    private readonly string _themeCacheDir;
 
     public BackgroundService(GameService gameService, SettingsService settingsService)
     {
@@ -24,8 +25,10 @@ public class BackgroundService : IDisposable
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
         _backgroundCacheDir = Path.Combine(SettingsService.GetCacheDirectory(), "backgrounds");
         _iconCacheDir = Path.Combine(SettingsService.GetCacheDirectory(), "icons");
+        _themeCacheDir = Path.Combine(SettingsService.GetCacheDirectory(), "themes");
         Directory.CreateDirectory(_backgroundCacheDir);
         Directory.CreateDirectory(_iconCacheDir);
+        Directory.CreateDirectory(_themeCacheDir);
     }
 
     /// <summary>
@@ -150,6 +153,49 @@ public class BackgroundService : IDisposable
     }
 
     /// <summary>
+    /// Download and cache the theme image for a game (overlaid on video backgrounds)
+    /// </summary>
+    public async Task<string?> GetCachedThemeImageAsync(string gameId, CancellationToken cancellationToken = default)
+    {
+        var backgroundInfo = await GetBackgroundInfoAsync(gameId, cancellationToken);
+        if (backgroundInfo == null || string.IsNullOrEmpty(backgroundInfo.ThemeUrl))
+        {
+            return null;
+        }
+
+        // Determine file extension from URL
+        var extension = GetFileExtension(backgroundInfo.ThemeUrl, BackgroundType.Image);
+        var cacheFileName = $"{gameId}_theme{extension}";
+        var cachePath = Path.Combine(_themeCacheDir, cacheFileName);
+
+        // Check if we have a cached version
+        if (File.Exists(cachePath))
+        {
+            var fileInfo = new FileInfo(cachePath);
+            // Use cached file if less than 24 hours old
+            if ((DateTime.UtcNow - fileInfo.LastWriteTimeUtc).TotalHours < 24)
+            {
+                return cachePath;
+            }
+        }
+
+        // Download the theme image
+        try
+        {
+            var bytes = await _httpClient.GetByteArrayAsync(backgroundInfo.ThemeUrl, cancellationToken);
+            await File.WriteAllBytesAsync(cachePath, bytes, cancellationToken);
+            Log.Information("Downloaded theme image for {GameId}: {Path}", gameId, cachePath);
+            return cachePath;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to download theme image for {GameId}", gameId);
+            // Return cached version if download fails
+            return File.Exists(cachePath) ? cachePath : null;
+        }
+    }
+
+    /// <summary>
     /// Clear cached backgrounds
     /// </summary>
     public void ClearCache()
@@ -163,6 +209,14 @@ public class BackgroundService : IDisposable
                     File.Delete(file);
                 }
                 Log.Information("Cleared background cache");
+            }
+            if (Directory.Exists(_themeCacheDir))
+            {
+                foreach (var file in Directory.GetFiles(_themeCacheDir))
+                {
+                    File.Delete(file);
+                }
+                Log.Information("Cleared theme cache");
             }
         }
         catch (Exception ex)
@@ -449,6 +503,20 @@ public class BackgroundService : IDisposable
                             }
                         }
 
+                        // Get theme image URL (overlay on top of video backgrounds)
+                        if (firstBg.TryGetProperty("theme", out var theme) && theme.ValueKind == JsonValueKind.Object)
+                        {
+                            if (theme.TryGetProperty("url", out var themeUrl))
+                            {
+                                var themeUrlStr = themeUrl.GetString();
+                                if (!string.IsNullOrEmpty(themeUrlStr))
+                                {
+                                    backgroundInfo.ThemeUrl = themeUrlStr;
+                                    Log.Debug("Found theme URL for {GameBiz}: {Url}", gameBiz, themeUrlStr);
+                                }
+                            }
+                        }
+
                         // Get static background image (fallback or for image-only backgrounds)
                         if (firstBg.TryGetProperty("background", out var background) && background.ValueKind == JsonValueKind.Object)
                         {
@@ -548,6 +616,7 @@ public class BackgroundInfo
     public string Url { get; set; } = string.Empty;
     public string? VideoUrl { get; set; }
     public string? FallbackUrl { get; set; }
+    public string? ThemeUrl { get; set; }
     public string? Color { get; set; }
     public string? LocalPath { get; set; }
     public string? IconUrl { get; set; }

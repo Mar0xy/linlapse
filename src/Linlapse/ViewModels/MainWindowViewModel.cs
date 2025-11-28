@@ -81,6 +81,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _backgroundColor = "#1a1a2e";
 
     [ObservableProperty]
+    private string? _themeOverlaySource;
+
+    [ObservableProperty]
     private bool _isSettingsVisible;
 
     // Settings properties (delegated from SettingsViewModel)
@@ -588,10 +591,17 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task InstallGameAsync()
     {
         if (SelectedGame == null || SelectedGame.IsInstalled) return;
+
+        // Only one download at a time is supported - show message if already downloading
+        if (IsDownloading)
+        {
+            StatusMessage = "A download is already in progress";
+            return;
+        }
 
         try
         {
@@ -875,6 +885,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
             if (backgroundInfo != null)
             {
+                // Reset theme overlay
+                ThemeOverlaySource = null;
+
                 if (backgroundInfo.Type == BackgroundType.Color && !string.IsNullOrEmpty(backgroundInfo.Color))
                 {
                     // Just use color background
@@ -900,6 +913,17 @@ public partial class MainWindowViewModel : ViewModelBase
                         BackgroundSource = backgroundInfo.Url;
                         IsVideoBackground = backgroundInfo.Type == BackgroundType.Video;
                     }
+
+                    // Load theme overlay for video backgrounds
+                    if (backgroundInfo.Type == BackgroundType.Video && !string.IsNullOrEmpty(backgroundInfo.ThemeUrl))
+                    {
+                        var cachedThemePath = await _backgroundService.GetCachedThemeImageAsync(gameId);
+                        if (!string.IsNullOrEmpty(cachedThemePath))
+                        {
+                            ThemeOverlaySource = cachedThemePath;
+                            Log.Debug("Set theme overlay for {GameId}: {Path}", gameId, cachedThemePath);
+                        }
+                    }
                 }
             }
         }
@@ -909,6 +933,7 @@ public partial class MainWindowViewModel : ViewModelBase
             // Keep default background
             BackgroundSource = null;
             IsVideoBackground = false;
+            ThemeOverlaySource = null;
         }
     }
 

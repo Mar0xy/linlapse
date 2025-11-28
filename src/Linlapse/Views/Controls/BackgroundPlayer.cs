@@ -23,6 +23,7 @@ public class BackgroundPlayer : UserControl, IDisposable
     private static readonly object _initLock = new();
 
     private MediaPlayer? _mediaPlayer;
+    private Media? _currentMedia;
     private Image? _imageView;
     private string? _currentSource;
     private bool _currentIsVideo;
@@ -92,11 +93,16 @@ public class BackgroundPlayer : UserControl, IDisposable
             {
                 Core.Initialize();
 
-                // Create LibVLC with minimal options
+                // Create LibVLC with options to minimize memory usage
                 _sharedLibVLC = new LibVLC(
                     "--no-video-title-show",
                     "--no-snapshot-preview",
-                    "--no-osd"
+                    "--no-osd",
+                    "--drop-late-frames",
+                    "--skip-frames",
+                    "--file-caching=1000",
+                    "--network-caching=1000",
+                    "--live-caching=1000"
                 );
 
                 _libVLCAvailable = true;
@@ -230,7 +236,15 @@ public class BackgroundPlayer : UserControl, IDisposable
 
         if (_imageView != null)
         {
+            // Dispose the old bitmap to free memory, but only if it's not one of our reusable video bitmaps
+            var oldSource = _imageView.Source;
             _imageView.Source = null;
+            
+            // Only dispose if it's a regular Bitmap (not our WriteableBitmaps used for video)
+            if (oldSource is Bitmap bitmap && oldSource != _videoBitmapA && oldSource != _videoBitmapB)
+            {
+                bitmap.Dispose();
+            }
         }
     }
 
@@ -267,8 +281,11 @@ public class BackgroundPlayer : UserControl, IDisposable
                     {
                         if (_imageView != null && !_isPlayingVideo)
                         {
+                            // Dispose old bitmap before setting new one
+                            var oldSource = _imageView.Source as IDisposable;
                             var bitmap = new Bitmap(source);
                             _imageView.Source = bitmap;
+                            oldSource?.Dispose();
                             Log.Debug("Loaded background image: {Path}", source);
                         }
                     }
@@ -311,8 +328,16 @@ public class BackgroundPlayer : UserControl, IDisposable
                     var bitmap = new Bitmap(stream);
                     if (_imageView != null && !_isPlayingVideo)
                     {
+                        // Dispose old bitmap before setting new one
+                        var oldSource = _imageView.Source as IDisposable;
                         _imageView.Source = bitmap;
+                        oldSource?.Dispose();
                         Log.Debug("Loaded background image from URL: {Url}", url);
+                    }
+                    else
+                    {
+                        // If we can't use the bitmap, dispose it
+                        bitmap.Dispose();
                     }
                 }
                 catch (Exception ex)
@@ -362,27 +387,30 @@ public class BackgroundPlayer : UserControl, IDisposable
                 _mediaPlayer.Stop();
             }
 
+            // Dispose previous media if any
+            _currentMedia?.Dispose();
+            _currentMedia = null;
+
             // Create media
-            Media? media = null;
             if (source.StartsWith("http://") || source.StartsWith("https://"))
             {
-                media = new Media(_sharedLibVLC, new Uri(source));
+                _currentMedia = new Media(_sharedLibVLC, new Uri(source));
             }
             else if (File.Exists(source))
             {
-                media = new Media(_sharedLibVLC, source, FromType.FromPath);
+                _currentMedia = new Media(_sharedLibVLC, source, FromType.FromPath);
             }
 
-            if (media != null)
+            if (_currentMedia != null)
             {
                 // Loop the video
-                media.AddOption(":input-repeat=65535");
+                _currentMedia.AddOption(":input-repeat=65535");
                 if (MuteAudio)
                 {
-                    media.AddOption(":no-audio");
+                    _currentMedia.AddOption(":no-audio");
                 }
 
-                _mediaPlayer.Play(media);
+                _mediaPlayer.Play(_currentMedia);
                 _renderTimer?.Start();
                 Log.Debug("Playing background video with frame rendering: {Path}", source);
             }
@@ -477,6 +505,10 @@ public class BackgroundPlayer : UserControl, IDisposable
                 // Give LibVLC time to finish any pending callbacks
                 Thread.Sleep(100);
             }
+            
+            // Dispose the media after stopping playback
+            _currentMedia?.Dispose();
+            _currentMedia = null;
         }
         catch (Exception ex)
         {
@@ -496,6 +528,10 @@ public class BackgroundPlayer : UserControl, IDisposable
             // Stop timer first
             _renderTimer?.Stop();
             _renderTimer = null;
+            
+            // Dispose media
+            _currentMedia?.Dispose();
+            _currentMedia = null;
             
             // Stop video playback
             if (_mediaPlayer != null)
