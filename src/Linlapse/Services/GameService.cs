@@ -260,6 +260,9 @@ public class GameService
     {
         Log.Information("Scanning for installed games...");
 
+        // First, verify that already-installed games still have their files
+        VerifyInstalledGames();
+
         var searchPaths = new List<string>
         {
             _settingsService.Settings.DefaultGameInstallPath ?? "",
@@ -277,6 +280,27 @@ public class GameService
 
         SaveGames();
         GamesListChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Verify that games marked as installed still have their executable files
+    /// </summary>
+    private void VerifyInstalledGames()
+    {
+        foreach (var game in _games.Where(g => g.IsInstalled))
+        {
+            // Check if install path exists and game executable is present
+            if (string.IsNullOrEmpty(game.InstallPath) || 
+                !Directory.Exists(game.InstallPath) ||
+                !IsGameDirectory(game.InstallPath, game))
+            {
+                Log.Information("Game {Name} no longer found at {Path}, marking as not installed", 
+                    game.DisplayName, game.InstallPath);
+                game.IsInstalled = false;
+                game.State = GameState.NotInstalled;
+                game.InstallPath = string.Empty;
+            }
+        }
     }
 
     private Task ScanDirectoryForGamesAsync(string basePath)
