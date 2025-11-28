@@ -555,26 +555,47 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedGame == null || AvailableUpdate == null) return;
 
+        // Prevent updating if already downloading
+        if (SelectedGame.IsDownloading)
+        {
+            StatusMessage = $"{SelectedGame.DisplayName} is already being downloaded";
+            return;
+        }
+
+        var gameId = SelectedGame.Id;
+        var gameName = SelectedGame.DisplayName;
+        var game = SelectedGame;
+
         try
         {
+            var cts = new CancellationTokenSource();
+            _downloadCancellationTokens[gameId] = cts;
+            
+            game.IsDownloading = true;
             IsDownloading = true;
-            DownloadingGameId = SelectedGame.Id;
-            StatusMessage = $"Downloading update for {SelectedGame.DisplayName}...";
+            DownloadingGameId = gameId;
+            OnPropertyChanged(nameof(IsSelectedGameDownloading));
+            OnPropertyChanged(nameof(IsAnyGameDownloading));
+            
+            StatusMessage = $"Downloading update for {gameName}...";
 
             var progress = new Progress<UpdateProgress>(p =>
             {
-                ProgressPercent = p.PercentComplete;
-                StatusMessage = p.State switch
+                if (SelectedGame?.Id == gameId)
                 {
-                    UpdateState.DownloadingPatch => "Downloading delta patch...",
-                    UpdateState.DownloadingFull => "Downloading full update...",
-                    UpdateState.ApplyingPatch => "Applying patch...",
-                    UpdateState.Extracting => "Extracting files...",
-                    _ => "Updating..."
-                };
+                    ProgressPercent = p.PercentComplete;
+                    StatusMessage = p.State switch
+                    {
+                        UpdateState.DownloadingPatch => "Downloading delta patch...",
+                        UpdateState.DownloadingFull => "Downloading full update...",
+                        UpdateState.ApplyingPatch => "Applying patch...",
+                        UpdateState.Extracting => "Extracting files...",
+                        _ => "Updating..."
+                    };
+                }
             });
 
-            var success = await _updateService.ApplyUpdateAsync(SelectedGame.Id, progress);
+            var success = await _updateService.ApplyUpdateAsync(gameId, progress);
 
             StatusMessage = success
                 ? "Update completed successfully!"
@@ -587,11 +608,28 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         finally
         {
-            IsDownloading = false;
-            DownloadingGameId = null;
-            ProgressPercent = 0;
+            game.IsDownloading = false;
+            
+            if (_downloadCancellationTokens.TryGetValue(gameId, out var oldCts))
+            {
+                oldCts.Dispose();
+                _downloadCancellationTokens.Remove(gameId);
+            }
+            
+            if (_downloadCancellationTokens.Count == 0)
+            {
+                IsDownloading = false;
+                DownloadingGameId = null;
+            }
+            
+            if (SelectedGame?.Id == gameId)
+            {
+                ProgressPercent = 0;
+            }
             AvailableUpdate = null;
             IsPreloadAvailable = false;
+            OnPropertyChanged(nameof(IsSelectedGameDownloading));
+            OnPropertyChanged(nameof(IsAnyGameDownloading));
         }
     }
 
@@ -600,18 +638,39 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedGame == null || !SelectedGame.IsInstalled) return;
 
+        // Prevent preloading if already downloading
+        if (SelectedGame.IsDownloading)
+        {
+            StatusMessage = $"{SelectedGame.DisplayName} is already being downloaded";
+            return;
+        }
+
+        var gameId = SelectedGame.Id;
+        var gameName = SelectedGame.DisplayName;
+        var game = SelectedGame;
+
         try
         {
+            var cts = new CancellationTokenSource();
+            _downloadCancellationTokens[gameId] = cts;
+            
+            game.IsDownloading = true;
             IsDownloading = true;
-            DownloadingGameId = SelectedGame.Id;
-            StatusMessage = $"Downloading preload for {SelectedGame.DisplayName}...";
+            DownloadingGameId = gameId;
+            OnPropertyChanged(nameof(IsSelectedGameDownloading));
+            OnPropertyChanged(nameof(IsAnyGameDownloading));
+            
+            StatusMessage = $"Downloading preload for {gameName}...";
 
             var progress = new Progress<UpdateProgress>(p =>
             {
-                ProgressPercent = p.PercentComplete;
+                if (SelectedGame?.Id == gameId)
+                {
+                    ProgressPercent = p.PercentComplete;
+                }
             });
 
-            var success = await _updateService.DownloadPreloadAsync(SelectedGame.Id, progress);
+            var success = await _updateService.DownloadPreloadAsync(gameId, progress);
 
             StatusMessage = success
                 ? "Preload completed!"
@@ -624,9 +683,26 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         finally
         {
-            IsDownloading = false;
-            DownloadingGameId = null;
-            ProgressPercent = 0;
+            game.IsDownloading = false;
+            
+            if (_downloadCancellationTokens.TryGetValue(gameId, out var oldCts))
+            {
+                oldCts.Dispose();
+                _downloadCancellationTokens.Remove(gameId);
+            }
+            
+            if (_downloadCancellationTokens.Count == 0)
+            {
+                IsDownloading = false;
+                DownloadingGameId = null;
+            }
+            
+            if (SelectedGame?.Id == gameId)
+            {
+                ProgressPercent = 0;
+            }
+            OnPropertyChanged(nameof(IsSelectedGameDownloading));
+            OnPropertyChanged(nameof(IsAnyGameDownloading));
         }
     }
 
