@@ -298,7 +298,10 @@ public class DownloadService : IDisposable
     /// </summary>
     public void CancelDownload(string fileName)
     {
-        // Resume first if paused, so the cancellation can be processed
+        // Resume first if paused, so the cancellation can be processed.
+        // Note: There may be a brief window where some data is processed before
+        // the cancellation token is checked, but this is acceptable as the
+        // partial data is saved and can be resumed later.
         if (_pauseEvents.TryGetValue(fileName, out var pauseEvent))
         {
             pauseEvent.Set();

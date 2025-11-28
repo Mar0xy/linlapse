@@ -294,7 +294,7 @@ public class UpdateService : IDisposable
                         progress?.Report(updateProgress);
                         UpdateProgressChanged?.Invoke(this, updateProgress);
                     };
-                    EventListener.PatchEvent += patchEventHandler;
+                    SharpHDiffPatch.Core.EventListener.PatchEvent += patchEventHandler;
 
                     // Apply the patch
                     // The HDiffPatch library patches: input (old) + diff -> output (new)
@@ -332,7 +332,7 @@ public class UpdateService : IDisposable
                     // Unsubscribe from event to prevent memory leaks
                     if (patchEventHandler != null)
                     {
-                        EventListener.PatchEvent -= patchEventHandler;
+                        SharpHDiffPatch.Core.EventListener.PatchEvent -= patchEventHandler;
                     }
 
                     // Cleanup temp output
