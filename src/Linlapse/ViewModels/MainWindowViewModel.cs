@@ -39,6 +39,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _isDownloading;
 
     [ObservableProperty]
+    private string? _downloadingGameId;
+
+    [ObservableProperty]
     private bool _isPaused;
 
     [ObservableProperty]
@@ -139,6 +142,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string AppVersion => "1.0.0";
     public string AppTitle => "Linlapse";
+
+    /// <summary>
+    /// Returns true if the currently selected game is the one being downloaded
+    /// </summary>
+    public bool IsSelectedGameDownloading => IsDownloading && DownloadingGameId != null && SelectedGame?.Id == DownloadingGameId;
+
+    /// <summary>
+    /// Returns true if another game (not the selected one) is being downloaded
+    /// </summary>
+    public bool IsOtherGameDownloading => IsDownloading && DownloadingGameId != null && SelectedGame?.Id != DownloadingGameId;
 
     public MainWindowViewModel()
     {
@@ -503,6 +516,7 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             IsDownloading = true;
+            DownloadingGameId = SelectedGame.Id;
             StatusMessage = $"Downloading update for {SelectedGame.DisplayName}...";
 
             var progress = new Progress<UpdateProgress>(p =>
@@ -532,6 +546,7 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             IsDownloading = false;
+            DownloadingGameId = null;
             ProgressPercent = 0;
             AvailableUpdate = null;
             IsPreloadAvailable = false;
@@ -546,6 +561,7 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             IsDownloading = true;
+            DownloadingGameId = SelectedGame.Id;
             StatusMessage = $"Downloading preload for {SelectedGame.DisplayName}...";
 
             var progress = new Progress<UpdateProgress>(p =>
@@ -567,6 +583,7 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             IsDownloading = false;
+            DownloadingGameId = null;
             ProgressPercent = 0;
         }
     }
@@ -580,6 +597,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             _downloadCts = new CancellationTokenSource();
             IsDownloading = true;
+            DownloadingGameId = SelectedGame.Id;
             StatusMessage = $"Fetching download information for {SelectedGame.DisplayName}...";
 
             // First, get download info to show size
@@ -588,6 +606,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 StatusMessage = "Failed to get download information. Game may not be available for download.";
                 IsDownloading = false;
+                DownloadingGameId = null;
                 return;
             }
 
@@ -650,6 +669,7 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             IsDownloading = false;
+            DownloadingGameId = null;
             IsPaused = false;
             ProgressPercent = 0;
             ProgressText = string.Empty;
@@ -803,6 +823,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
     partial void OnSelectedGameChanged(GameInfo? value)
     {
+        // Notify computed properties that depend on SelectedGame
+        OnPropertyChanged(nameof(IsSelectedGameDownloading));
+        OnPropertyChanged(nameof(IsOtherGameDownloading));
+
         if (value != null)
         {
             IsGameRunning = _launcherService.IsGameRunning(value.Id);
@@ -829,6 +853,18 @@ public partial class MainWindowViewModel : ViewModelBase
                 _ = GetDownloadInfoAsync();
             }
         }
+    }
+
+    partial void OnIsDownloadingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsSelectedGameDownloading));
+        OnPropertyChanged(nameof(IsOtherGameDownloading));
+    }
+
+    partial void OnDownloadingGameIdChanged(string? value)
+    {
+        OnPropertyChanged(nameof(IsSelectedGameDownloading));
+        OnPropertyChanged(nameof(IsOtherGameDownloading));
     }
 
     private async Task LoadBackgroundAsync(string gameId)

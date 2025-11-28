@@ -397,7 +397,7 @@
                                 MaxWidth="600"
                                 HorizontalAlignment="Right"
                                 BoxShadow="0 4 16 0 #000000AA"
-                                IsVisible="{Binding IsDownloading}">
+                                IsVisible="{Binding IsSelectedGameDownloading}">
                             <StackPanel Spacing="12">
                                 <ProgressBar Value="{Binding ProgressPercent}"
                                              Maximum="100"
@@ -457,7 +457,7 @@
                             <Button Classes="primary"
                                     Command="{Binding InstallGameCommand}"
                                     IsVisible="{Binding !SelectedGame.IsInstalled}"
-                                    IsEnabled="{Binding !IsDownloading}">
+                                    IsEnabled="{Binding !IsSelectedGameDownloading}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="📥"/>
                                     <TextBlock Text="Install Game"/>
