@@ -174,8 +174,8 @@ public partial class MainWindowViewModel : ViewModelBase
         // Subscribe to events
         _gameService.GamesListChanged += (_, _) => RefreshGamesCollection();
         _gameService.GameStateChanged += (_, game) => UpdateGameInCollection(game);
-        _launcherService.GameStarted += (_, _) => IsGameRunning = true;
-        _launcherService.GameStopped += (_, _) => IsGameRunning = false;
+        _launcherService.GameStarted += (_, game) => OnGameStarted(game);
+        _launcherService.GameStopped += (_, game) => OnGameStopped(game);
 
         _downloadService.DownloadProgressChanged += OnDownloadProgress;
         _installationService.InstallProgressChanged += OnInstallProgress;
@@ -341,6 +341,24 @@ public partial class MainWindowViewModel : ViewModelBase
                     _isRestoringSelection = false;
                 }
             }
+        }
+    }
+
+    private void OnGameStarted(GameInfo game)
+    {
+        // Only update IsGameRunning if the started game is the currently selected one
+        if (SelectedGame?.Id == game.Id)
+        {
+            IsGameRunning = true;
+        }
+    }
+
+    private void OnGameStopped(GameInfo game)
+    {
+        // Only update IsGameRunning if the stopped game is the currently selected one
+        if (SelectedGame?.Id == game.Id)
+        {
+            IsGameRunning = false;
         }
     }
 
@@ -856,6 +874,16 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSelectedGameDownloading));
         OnPropertyChanged(nameof(IsOtherGameDownloading));
 
+        // Always update IsGameRunning when selection changes (even during restore)
+        if (value != null)
+        {
+            IsGameRunning = _launcherService.IsGameRunning(value.Id);
+        }
+        else
+        {
+            IsGameRunning = false;
+        }
+
         // Skip heavy operations if we're just restoring selection after a game state update
         if (_isRestoringSelection)
         {
@@ -864,7 +892,6 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (value != null)
         {
-            IsGameRunning = _launcherService.IsGameRunning(value.Id);
             AvailableUpdate = null;
             IsPreloadAvailable = false;
             CacheInfo = null;
