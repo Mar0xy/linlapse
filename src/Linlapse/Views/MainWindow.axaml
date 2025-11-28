@@ -83,6 +83,30 @@
         <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="#2a2a40"/>
         </Style>
+        <Style Selector="ContextMenu">
+            <Setter Property="Background" Value="#27272a"/>
+            <Setter Property="BorderBrush" Value="#3f3f46"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="4"/>
+        </Style>
+        <Style Selector="MenuItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#e4e4e7"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="MenuItem:pointerover /template/ Border#PART_LayoutRoot">
+            <Setter Property="Background" Value="#3f3f46"/>
+        </Style>
+        <Style Selector="MenuItem:disabled">
+            <Setter Property="Foreground" Value="#71717a"/>
+        </Style>
+        <Style Selector="Separator">
+            <Setter Property="Background" Value="#3f3f46"/>
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Margin" Value="8,4"/>
+        </Style>
     </Window.Styles>
 
     <Grid>
@@ -117,6 +141,20 @@
                                     ClipToBounds="True"
                                     Margin="0,4"
                                     ToolTip.Tip="{Binding DisplayName}">
+                                <Border.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="{Binding DisplayName}" IsEnabled="False" FontWeight="Bold"/>
+                                        <Separator/>
+                                        <MenuItem Header="🗑 Uninstall" 
+                                                  Command="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).UninstallGameCommand}"
+                                                  CommandParameter="{Binding}"
+                                                  IsVisible="{Binding IsInstalled}"/>
+                                        <MenuItem Header="📂 Open Install Folder" 
+                                                  Command="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).OpenInstallFolderCommand}"
+                                                  CommandParameter="{Binding}"
+                                                  IsVisible="{Binding IsInstalled}"/>
+                                    </ContextMenu>
+                                </Border.ContextMenu>
                                 <Panel>
                                     <Image Source="{Binding LogoImagePath, Converter={StaticResource FilePathToBitmapConverter}}"
                                            Stretch="UniformToFill"

@@ -684,6 +684,65 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task UninstallGameAsync(GameInfo? game)
+    {
+        var targetGame = game ?? SelectedGame;
+        if (targetGame == null || !targetGame.IsInstalled) return;
+
+        try
+        {
+            StatusMessage = $"Uninstalling {targetGame.DisplayName}...";
+            
+            var success = await _installationService.UninstallGameAsync(targetGame.Id, deleteFiles: true);
+            
+            if (success)
+            {
+                StatusMessage = $"{targetGame.DisplayName} has been uninstalled";
+                // Refresh the game list to update the UI
+                await RefreshGamesAsync();
+            }
+            else
+            {
+                StatusMessage = $"Failed to uninstall {targetGame.DisplayName}";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to uninstall game {GameId}", targetGame.Id);
+            StatusMessage = $"Failed to uninstall: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void OpenInstallFolder(GameInfo? game)
+    {
+        var targetGame = game ?? SelectedGame;
+        if (targetGame == null || !targetGame.IsInstalled || string.IsNullOrEmpty(targetGame.InstallPath)) return;
+
+        try
+        {
+            if (Directory.Exists(targetGame.InstallPath))
+            {
+                // Open the folder in the default file manager
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = targetGame.InstallPath,
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                StatusMessage = "Install folder does not exist";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to open install folder for {GameId}", targetGame.Id);
+            StatusMessage = $"Failed to open folder: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
     private async Task GetDownloadInfoAsync()
     {
         if (SelectedGame == null) return;
