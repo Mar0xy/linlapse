@@ -325,21 +325,22 @@ public partial class MainWindowViewModel : ViewModelBase
             var index = Games.IndexOf(existingGame);
             var wasSelected = SelectedGame?.Id == updatedGame.Id;
             
-            Games[index] = updatedGame;
-
-            // Restore selection if this was the selected game
-            // Use a flag to prevent OnSelectedGameChanged from re-triggering update checks
-            if (wasSelected)
+            // Set flag BEFORE replacing the item to prevent selection change side effects
+            // When we replace the item, the UI may fire selection change events
+            _isRestoringSelection = true;
+            try
             {
-                _isRestoringSelection = true;
-                try
+                Games[index] = updatedGame;
+
+                // Restore selection if this was the selected game
+                if (wasSelected)
                 {
                     SelectedGame = updatedGame;
                 }
-                finally
-                {
-                    _isRestoringSelection = false;
-                }
+            }
+            finally
+            {
+                _isRestoringSelection = false;
             }
         }
     }
@@ -675,7 +676,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     GameDownloadState.Downloading => $"Downloading: {p.PercentComplete:F1}% ({speedMb:F1} MB/s)",
                     GameDownloadState.DownloadingVoicePacks => $"Downloading voice packs: {p.PercentComplete:F1}%",
                     GameDownloadState.Verifying => "Verifying downloaded files...",
-                    GameDownloadState.Extracting => $"Extracting: {p.ExtractedFiles}/{p.TotalFiles} files",
+                    GameDownloadState.Extracting => "Extracting...",
                     GameDownloadState.Cleanup => "Cleaning up...",
                     GameDownloadState.Completed => "Installation complete!",
                     GameDownloadState.Failed => $"Failed: {p.ErrorMessage}",
