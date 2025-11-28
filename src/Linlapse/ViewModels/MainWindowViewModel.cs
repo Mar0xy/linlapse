@@ -327,12 +327,23 @@ public partial class MainWindowViewModel : ViewModelBase
             Games[index] = updatedGame;
 
             // Restore selection if this was the selected game
+            // Use a flag to prevent OnSelectedGameChanged from re-triggering update checks
             if (wasSelected)
             {
-                SelectedGame = updatedGame;
+                _isRestoringSelection = true;
+                try
+                {
+                    SelectedGame = updatedGame;
+                }
+                finally
+                {
+                    _isRestoringSelection = false;
+                }
             }
         }
     }
+    
+    private bool _isRestoringSelection;
 
     private void OnDownloadProgress(object? sender, DownloadProgress progress)
     {
@@ -836,6 +847,12 @@ public partial class MainWindowViewModel : ViewModelBase
         // Notify computed properties that depend on SelectedGame
         OnPropertyChanged(nameof(IsSelectedGameDownloading));
         OnPropertyChanged(nameof(IsOtherGameDownloading));
+
+        // Skip heavy operations if we're just restoring selection after a game state update
+        if (_isRestoringSelection)
+        {
+            return;
+        }
 
         if (value != null)
         {
