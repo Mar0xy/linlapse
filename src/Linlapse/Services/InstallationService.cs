@@ -168,8 +168,9 @@ public class InstallationService
                 var entryKey = entry.Key ?? string.Empty;
                 
                 // Validate entry key to prevent path traversal attacks
+                // Use case-sensitive comparison (Ordinal) for proper security on Linux file systems
                 var destinationFileName = Path.GetFullPath(Path.Combine(destinationPath, entryKey));
-                if (!destinationFileName.StartsWith(fullDestinationPath, StringComparison.OrdinalIgnoreCase))
+                if (!destinationFileName.StartsWith(fullDestinationPath, StringComparison.Ordinal))
                 {
                     Log.Warning("Skipping potentially malicious archive entry: {EntryKey}", entryKey);
                     continue;

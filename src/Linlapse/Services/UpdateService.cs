@@ -277,6 +277,7 @@ public class UpdateService : IDisposable
             {
                 // Create a temporary output path for the patched result
                 var tempOutputPath = Path.Combine(patchDir, "patched_output");
+                EventHandler<SharpHDiffPatch.Core.Event.PatchEvent>? patchEventHandler = null;
 
                 try
                 {
@@ -285,7 +286,7 @@ public class UpdateService : IDisposable
                     patcher.Initialize(patchPath);
                     
                     // Set up progress callback via EventListener
-                    EventListener.PatchEvent += (sender, e) =>
+                    patchEventHandler = (sender, e) =>
                     {
                         updateProgress.ProcessedBytes = e.CurrentSizePatched;
                         updateProgress.TotalBytes = e.TotalSizeToBePatched;
@@ -293,36 +294,14 @@ public class UpdateService : IDisposable
                         progress?.Report(updateProgress);
                         UpdateProgressChanged?.Invoke(this, updateProgress);
                     };
+                    EventListener.PatchEvent += patchEventHandler;
 
                     // Apply the patch
-                    // The HDiffPatch library patches a single file: input (old) + diff -> output (new)
-                    // For game updates, we typically need to patch the entire directory
+                    // The HDiffPatch library patches: input (old) + diff -> output (new)
                     patcher.Patch(game.InstallPath, tempOutputPath, useBufferedPatch: true, cancellationToken);
 
-                    // If successful, move the patched output back
-                    if (File.Exists(tempOutputPath))
-                    {
-                        // Handle single file patch result
-                        var destPath = game.InstallPath;
-                        if (Directory.Exists(game.InstallPath))
-                        {
-                            // For directory patches, copy contents
-                            foreach (var file in Directory.GetFiles(tempOutputPath, "*", SearchOption.AllDirectories))
-                            {
-                                var relativePath = Path.GetRelativePath(tempOutputPath, file);
-                                var finalPath = Path.Combine(game.InstallPath, relativePath);
-                                
-                                var finalDir = Path.GetDirectoryName(finalPath);
-                                if (!string.IsNullOrEmpty(finalDir))
-                                {
-                                    Directory.CreateDirectory(finalDir);
-                                }
-                                
-                                File.Move(file, finalPath, overwrite: true);
-                            }
-                        }
-                    }
-                    else if (Directory.Exists(tempOutputPath))
+                    // Move the patched output back to the install path
+                    if (Directory.Exists(tempOutputPath))
                     {
                         // Directory output - move all files back to install path
                         foreach (var file in Directory.GetFiles(tempOutputPath, "*", SearchOption.AllDirectories))
@@ -339,11 +318,23 @@ public class UpdateService : IDisposable
                             File.Move(file, destPath, overwrite: true);
                         }
                     }
+                    else if (File.Exists(tempOutputPath))
+                    {
+                        // Single file output - this shouldn't happen for game updates
+                        // but handle it just in case
+                        Log.Warning("Unexpected single file patch result for {GameId}", game.Id);
+                    }
 
                     Log.Information("Delta patch applied successfully for {GameId}", game.Id);
                 }
                 finally
                 {
+                    // Unsubscribe from event to prevent memory leaks
+                    if (patchEventHandler != null)
+                    {
+                        EventListener.PatchEvent -= patchEventHandler;
+                    }
+
                     // Cleanup temp output
                     try 
                     { 
