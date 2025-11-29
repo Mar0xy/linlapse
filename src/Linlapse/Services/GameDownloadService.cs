@@ -152,10 +152,18 @@ public class GameDownloadService : IDisposable
                 var segment = segments[i];
                 downloadProgress.CurrentFile = $"Part {i + 1} of {segments.Count}";
                 
-                var extension = Path.GetExtension(new Uri(segment.DownloadUrl).AbsolutePath);
-                if (string.IsNullOrEmpty(extension)) extension = ".zip";
-                
-                var segmentPath = Path.Combine(tempDir, $"game_package_part{segment.PartNumber}{extension}");
+                // Extract original filename from URL to preserve proper naming for split archive extraction
+                var uri = new Uri(segment.DownloadUrl);
+                var originalFileName = Path.GetFileName(uri.AbsolutePath);
+                if (string.IsNullOrEmpty(originalFileName))
+                {
+                    // Fallback to generic naming if URL doesn't contain filename
+                    var extension = Path.GetExtension(uri.AbsolutePath);
+                    if (string.IsNullOrEmpty(extension)) extension = ".zip";
+                    originalFileName = $"game_package_part{segment.PartNumber}{extension}";
+                }
+
+                var segmentPath = Path.Combine(tempDir, originalFileName);
 
                 var segmentProgress = new Progress<DownloadProgress>(dp =>
                 {
@@ -166,33 +174,57 @@ public class GameDownloadService : IDisposable
                     DownloadProgressChanged?.Invoke(this, downloadProgress);
                 });
 
-                Log.Information("Downloading segment {Part}/{Total}: {Url}", 
-                    segment.PartNumber, segments.Count, segment.DownloadUrl);
-
-                var segmentSuccess = await _downloadService.DownloadFileAsync(
-                    segment.DownloadUrl,
-                    segmentPath,
-                    segmentProgress,
-                    cancellationToken);
-
-                if (!segmentSuccess)
+                // Check if segment already exists and is valid (for resume support)
+                bool segmentAlreadyComplete = false;
+                if (File.Exists(segmentPath) && !string.IsNullOrEmpty(segment.Md5))
                 {
-                    throw new Exception($"Failed to download game package segment {segment.PartNumber}");
+                    var existingFileInfo = new FileInfo(segmentPath);
+                    if (existingFileInfo.Length == segment.Size)
+                    {
+                        var isValid = await _downloadService.VerifyFileHashAsync(
+                            segmentPath,
+                            segment.Md5,
+                            System.Security.Cryptography.HashAlgorithmName.MD5);
+                        
+                        if (isValid)
+                        {
+                            Log.Information("Segment {Part}/{Total} already downloaded and verified, skipping", 
+                                segment.PartNumber, segments.Count);
+                            segmentAlreadyComplete = true;
+                        }
+                    }
                 }
 
-                // Verify segment if MD5 is available
-                if (!string.IsNullOrEmpty(segment.Md5))
+                if (!segmentAlreadyComplete)
                 {
-                    var isValid = await _downloadService.VerifyFileHashAsync(
-                        segmentPath,
-                        segment.Md5,
-                        System.Security.Cryptography.HashAlgorithmName.MD5);
+                    Log.Information("Downloading segment {Part}/{Total}: {Url}", 
+                        segment.PartNumber, segments.Count, segment.DownloadUrl);
 
-                    if (!isValid)
+                    var segmentSuccess = await _downloadService.DownloadFileAsync(
+                        segment.DownloadUrl,
+                        segmentPath,
+                        segmentProgress,
+                        cancellationToken);
+
+                    if (!segmentSuccess)
                     {
-                        throw new Exception($"Downloaded segment {segment.PartNumber} verification failed - file may be corrupted");
+                        throw new Exception($"Failed to download game package segment {segment.PartNumber}");
                     }
-                    Log.Debug("Segment {Part} MD5 verified successfully", segment.PartNumber);
+
+                    // Verify segment if MD5 is available
+                    if (!string.IsNullOrEmpty(segment.Md5))
+                    {
+                        var isValid = await _downloadService.VerifyFileHashAsync(
+                            segmentPath,
+                            segment.Md5,
+                            System.Security.Cryptography.HashAlgorithmName.MD5);
+
+                        if (!isValid)
+                        {
+                            throw new Exception($"Downloaded segment {segment.PartNumber} verification failed - file may be corrupted");
+                        }
+                        Log.Debug("Segment {Part} MD5 verified successfully", segment.PartNumber);
+                    }
                 }
 
                 downloadedFiles.Add(segmentPath);

@@ -41,12 +41,14 @@ public class DownloadService : IDisposable
         IProgress<DownloadProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        // Use full path as key to support multiple concurrent downloads with same filename
+        var downloadKey = destinationPath;
         var fileName = Path.GetFileName(destinationPath);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _activeDownloads[fileName] = cts;
+        _activeDownloads[downloadKey] = cts;
         var pauseSemaphore = new SemaphoreSlim(1, 1); // Initially not paused (1 available)
-        _pauseSemaphores[fileName] = pauseSemaphore;
-        _isPaused[fileName] = false;
+        _pauseSemaphores[downloadKey] = pauseSemaphore;
+        _isPaused[downloadKey] = false;
 
         try
         {
@@ -112,9 +114,10 @@ public class DownloadService : IDisposable
             while ((bytesRead = await contentStream.ReadAsync(buffer, cts.Token)) > 0)
             {
                 // Check if paused - wait asynchronously until resumed or cancelled
-                if (_isPaused.TryGetValue(fileName, out var isPaused) && isPaused)
+                if (_isPaused.TryGetValue(downloadKey, out var isPaused) && isPaused)
                 {
                     downloadProgress.State = DownloadState.Paused;
+                    downloadProgress.SpeedBytesPerSecond = 0; // Reset speed when paused
                     progress?.Report(downloadProgress);
                     DownloadProgressChanged?.Invoke(this, downloadProgress);
                     
@@ -126,6 +129,7 @@ public class DownloadService : IDisposable
                     // Reset timing for accurate speed calculation after resume
                     startTime = DateTime.UtcNow;
                     bytesAtStart = downloadProgress.BytesDownloaded;
+                    lastProgressReport = DateTime.UtcNow; // Also reset last report time
                 }
 
                 await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cts.Token);
@@ -134,14 +138,22 @@ public class DownloadService : IDisposable
                 // Report progress every 100ms
                 if ((DateTime.UtcNow - lastProgressReport).TotalMilliseconds >= 100)
                 {
-                    var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
-                    if (elapsed > 0)
+                    // Check if paused again - don't calculate speed if we're paused
+                    if (_isPaused.TryGetValue(downloadKey, out var currentlyPaused) && currentlyPaused)
                     {
-                        downloadProgress.SpeedBytesPerSecond = (downloadProgress.BytesDownloaded - bytesAtStart) / elapsed;
-                        if (downloadProgress.SpeedBytesPerSecond > 0)
+                        downloadProgress.SpeedBytesPerSecond = 0;
+                    }
+                    else
+                    {
+                        var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
+                        if (elapsed > 0)
                         {
-                            var remainingBytes = totalBytes - downloadProgress.BytesDownloaded;
-                            downloadProgress.EstimatedTimeRemaining = TimeSpan.FromSeconds(remainingBytes / downloadProgress.SpeedBytesPerSecond);
+                            downloadProgress.SpeedBytesPerSecond = (downloadProgress.BytesDownloaded - bytesAtStart) / elapsed;
+                            if (downloadProgress.SpeedBytesPerSecond > 0)
+                            {
+                                var remainingBytes = totalBytes - downloadProgress.BytesDownloaded;
+                                downloadProgress.EstimatedTimeRemaining = TimeSpan.FromSeconds(remainingBytes / downloadProgress.SpeedBytesPerSecond);
+                            }
                         }
                     }
 
@@ -190,9 +202,9 @@ public class DownloadService : IDisposable
         }
         finally
         {
-            _activeDownloads.TryRemove(fileName, out _);
-            _isPaused.TryRemove(fileName, out _);
-            if (_pauseSemaphores.TryRemove(fileName, out var removedSemaphore))
+            _activeDownloads.TryRemove(downloadKey, out _);
+            _isPaused.TryRemove(downloadKey, out _);
+            if (_pauseSemaphores.TryRemove(downloadKey, out var removedSemaphore))
             {
                 removedSemaphore.Dispose();
             }
@@ -233,28 +245,28 @@ public class DownloadService : IDisposable
     }
 
     /// <summary>
-    /// Pause a specific download
+    /// Pause a specific download by its full path key
     /// </summary>
-    public void PauseDownload(string fileName)
+    public void PauseDownload(string downloadKey)
     {
-        if (_pauseSemaphores.TryGetValue(fileName, out var semaphore))
+        if (_pauseSemaphores.TryGetValue(downloadKey, out var semaphore))
         {
-            _isPaused[fileName] = true;
+            _isPaused[downloadKey] = true;
             // Take the semaphore to block the download loop
             semaphore.Wait(0); // Non-blocking take if available
-            DownloadPaused?.Invoke(this, fileName);
-            Log.Information("Download paused: {FileName}", fileName);
+            DownloadPaused?.Invoke(this, downloadKey);
+            Log.Information("Download paused: {DownloadKey}", downloadKey);
         }
     }
 
     /// <summary>
-    /// Resume a specific download
+    /// Resume a specific download by its full path key
     /// </summary>
-    public void ResumeDownload(string fileName)
+    public void ResumeDownload(string downloadKey)
     {
-        if (_pauseSemaphores.TryGetValue(fileName, out var semaphore))
+        if (_pauseSemaphores.TryGetValue(downloadKey, out var semaphore))
         {
-            _isPaused[fileName] = false;
+            _isPaused[downloadKey] = false;
             // Release the semaphore to unblock the download loop
             try
             {
@@ -264,8 +276,43 @@ public class DownloadService : IDisposable
             {
                 // Already released, ignore
             }
-            DownloadResumed?.Invoke(this, fileName);
-            Log.Information("Download resumed: {FileName}", fileName);
+            DownloadResumed?.Invoke(this, downloadKey);
+            Log.Information("Download resumed: {DownloadKey}", downloadKey);
+        }
+    }
+
+    /// <summary>
+    /// Pause all downloads whose key contains the specified path segment (e.g., gameId)
+    /// </summary>
+    public void PauseDownloadsContaining(string pathSegment)
+    {
+        foreach (var kvp in _pauseSemaphores.Where(kvp => kvp.Key.Contains(pathSegment)))
+        {
+            _isPaused[kvp.Key] = true;
+            kvp.Value.Wait(0); // Non-blocking take if available
+            DownloadPaused?.Invoke(this, kvp.Key);
+            Log.Information("Download paused: {DownloadKey}", kvp.Key);
+        }
+    }
+
+    /// <summary>
+    /// Resume all downloads whose key contains the specified path segment (e.g., gameId)
+    /// </summary>
+    public void ResumeDownloadsContaining(string pathSegment)
+    {
+        foreach (var kvp in _pauseSemaphores.Where(kvp => kvp.Key.Contains(pathSegment)))
+        {
+            _isPaused[kvp.Key] = false;
+            try
+            {
+                kvp.Value.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Already released, ignore
+            }
+            DownloadResumed?.Invoke(this, kvp.Key);
+            Log.Information("Download resumed: {DownloadKey}", kvp.Key);
         }
     }
 
@@ -305,23 +352,23 @@ public class DownloadService : IDisposable
     /// <summary>
     /// Check if a download is currently paused
     /// </summary>
-    public bool IsDownloadPaused(string fileName)
+    public bool IsDownloadPaused(string downloadKey)
     {
-        return _isPaused.TryGetValue(fileName, out var isPaused) && isPaused;
+        return _isPaused.TryGetValue(downloadKey, out var isPaused) && isPaused;
     }
 
     /// <summary>
-    /// Cancel a specific download
+    /// Cancel a specific download by its full path key
     /// </summary>
-    public void CancelDownload(string fileName)
+    public void CancelDownload(string downloadKey)
     {
         // Resume first if paused, so the cancellation can be processed.
         // Note: There may be a brief window where some data is processed before
         // the cancellation token is checked, but this is acceptable as the
         // partial data is saved and can be resumed later.
-        if (_pauseSemaphores.TryGetValue(fileName, out var semaphore))
+        if (_pauseSemaphores.TryGetValue(downloadKey, out var semaphore))
         {
-            _isPaused[fileName] = false;
+            _isPaused[downloadKey] = false;
             try
             {
                 semaphore.Release();
@@ -331,7 +378,7 @@ public class DownloadService : IDisposable
                 // Already released, ignore
             }
         }
-        if (_activeDownloads.TryGetValue(fileName, out var cts))
+        if (_activeDownloads.TryGetValue(downloadKey, out var cts))
         {
             cts.Cancel();
         }

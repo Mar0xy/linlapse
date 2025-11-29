@@ -177,14 +177,30 @@
                                                    HorizontalAlignment="Center"
                                                    FontSize="20"
                                                    IsVisible="{Binding LogoImagePath, Converter={x:Static StringConverters.IsNullOrEmpty}}"/>
-                                        <!-- Installed indicator -->
-                                        <Border IsVisible="{Binding IsInstalled}"
-                                                Background="#22c55e"
+                                        <!-- Downloading indicator -->
+                                        <Border IsVisible="{Binding IsDownloading}"
+                                                Background="#3b82f6"
                                                 CornerRadius="6"
                                                 Width="12" Height="12"
                                                 HorizontalAlignment="Right"
                                                 VerticalAlignment="Bottom"
                                                 Margin="0,0,2,2">
+                                            <TextBlock Text="↓" FontSize="9" FontWeight="Bold" Foreground="White" 
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <!-- Installed indicator (only show if installed and not downloading) -->
+                                        <Border Background="#22c55e"
+                                                CornerRadius="6"
+                                                Width="12" Height="12"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,2,2">
+                                            <Border.IsVisible>
+                                                <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                                    <Binding Path="IsInstalled"/>
+                                                    <Binding Path="!IsDownloading"/>
+                                                </MultiBinding>
+                                            </Border.IsVisible>
                                             <TextBlock Text="✓" FontSize="8" Foreground="White" 
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
@@ -468,7 +484,7 @@
                             <Button Classes="primary"
                                     Command="{Binding InstallGameCommand}"
                                     IsVisible="{Binding !SelectedGame.IsInstalled}"
-                                    IsEnabled="{Binding !IsSelectedGameDownloading}">
+                                    IsEnabled="{Binding !SelectedGame.IsDownloading}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="📥"/>
                                     <TextBlock Text="Install Game"/>

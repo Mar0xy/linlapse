@@ -21,7 +21,14 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly GameDownloadService _gameDownloadService;
     private readonly BackgroundService _backgroundService;
 
-    private CancellationTokenSource? _downloadCts;
+    // Dictionary to track cancellation tokens for each downloading game
+    private readonly Dictionary<string, CancellationTokenSource> _downloadCancellationTokens = new();
+    // Dictionary to track download progress for each downloading game
+    private readonly Dictionary<string, (double ProgressPercent, string ProgressText)> _downloadProgressByGame = new();
+    // Dictionary to track pause state for each downloading game
+    private readonly Dictionary<string, bool> _pauseStateByGame = new();
+    // Lock object to synchronize progress updates across multiple downloads
+    private readonly object _progressUpdateLock = new();
     private bool _isRestoringSelection;
 
     [ObservableProperty]
@@ -148,14 +155,14 @@ public partial class MainWindowViewModel : ViewModelBase
     public string AppTitle => "Linlapse";
 
     /// <summary>
-    /// Returns true if the currently selected game is the one being downloaded
+    /// Returns true if the currently selected game is being downloaded
     /// </summary>
-    public bool IsSelectedGameDownloading => IsDownloading && DownloadingGameId != null && SelectedGame?.Id == DownloadingGameId;
+    public bool IsSelectedGameDownloading => SelectedGame?.IsDownloading == true;
 
     /// <summary>
-    /// Returns true if another game (not the selected one) is being downloaded
+    /// Returns true if any game is currently being downloaded
     /// </summary>
-    public bool IsOtherGameDownloading => IsDownloading && DownloadingGameId != null && SelectedGame?.Id != DownloadingGameId;
+    public bool IsAnyGameDownloading => _downloadCancellationTokens.Count > 0;
 
     public MainWindowViewModel()
     {
@@ -177,7 +184,9 @@ public partial class MainWindowViewModel : ViewModelBase
         _launcherService.GameStarted += (_, game) => OnGameStarted(game);
         _launcherService.GameStopped += (_, game) => OnGameStopped(game);
 
-        _downloadService.DownloadProgressChanged += OnDownloadProgress;
+        // Note: We don't subscribe to _downloadService.DownloadProgressChanged because game downloads
+        // use Progress<GameDownloadProgress> callbacks which provide per-game progress tracking.
+        // Subscribing to the global event would cause progress bar glitching when multiple downloads are active.
         _installationService.InstallProgressChanged += OnInstallProgress;
         _repairService.RepairProgressChanged += OnRepairProgress;
         _updateService.UpdateProgressChanged += OnUpdateProgress;
@@ -361,13 +370,6 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsGameRunning = false;
         }
-    }
-
-    private void OnDownloadProgress(object? sender, DownloadProgress progress)
-    {
-        ProgressPercent = progress.PercentComplete;
-        var speedMb = progress.SpeedBytesPerSecond / 1024 / 1024;
-        ProgressText = $"Downloading: {progress.PercentComplete:F1}% ({speedMb:F1} MB/s)";
     }
 
     private void OnInstallProgress(object? sender, InstallProgress progress)
@@ -554,26 +556,61 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedGame == null || AvailableUpdate == null) return;
 
+        // Prevent updating if already downloading
+        if (SelectedGame.IsDownloading)
+        {
+            StatusMessage = $"{SelectedGame.DisplayName} is already being downloaded";
+            return;
+        }
+
+        var gameId = SelectedGame.Id;
+        var gameName = SelectedGame.DisplayName;
+        var game = SelectedGame;
+
         try
         {
+            var cts = new CancellationTokenSource();
+            _downloadCancellationTokens[gameId] = cts;
+            
+            game.IsDownloading = true;
             IsDownloading = true;
-            DownloadingGameId = SelectedGame.Id;
-            StatusMessage = $"Downloading update for {SelectedGame.DisplayName}...";
+            DownloadingGameId = gameId;
+            OnPropertyChanged(nameof(IsSelectedGameDownloading));
+            OnPropertyChanged(nameof(IsAnyGameDownloading));
+            
+            StatusMessage = $"Downloading update for {gameName}...";
 
             var progress = new Progress<UpdateProgress>(p =>
             {
-                ProgressPercent = p.PercentComplete;
-                StatusMessage = p.State switch
+                // Use lock to prevent race conditions when multiple downloads update progress
+                lock (_progressUpdateLock)
                 {
-                    UpdateState.DownloadingPatch => "Downloading delta patch...",
-                    UpdateState.DownloadingFull => "Downloading full update...",
-                    UpdateState.ApplyingPatch => "Applying patch...",
-                    UpdateState.Extracting => "Extracting files...",
-                    _ => "Updating..."
-                };
+                    var progressText = p.State switch
+                    {
+                        UpdateState.DownloadingPatch => "Downloading delta patch...",
+                        UpdateState.DownloadingFull => "Downloading full update...",
+                        UpdateState.ApplyingPatch => "Applying patch...",
+                        UpdateState.Extracting => "Extracting files...",
+                        _ => "Updating..."
+                    };
+
+                    // Store progress for this game
+                    _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
+
+                    // Capture selected game ID once inside the lock
+                    var currentSelectedGameId = SelectedGame?.Id;
+                    
+                    // Update UI only if this game is the currently selected game
+                    if (currentSelectedGameId == gameId)
+                    {
+                        ProgressPercent = p.PercentComplete;
+                        ProgressText = progressText;
+                        StatusMessage = progressText;
+                    }
+                }
             });
 
-            var success = await _updateService.ApplyUpdateAsync(SelectedGame.Id, progress);
+            var success = await _updateService.ApplyUpdateAsync(gameId, progress);
 
             StatusMessage = success
                 ? "Update completed successfully!"
@@ -586,11 +623,32 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         finally
         {
-            IsDownloading = false;
-            DownloadingGameId = null;
-            ProgressPercent = 0;
+            game.IsDownloading = false;
+            _downloadProgressByGame.Remove(gameId);
+            _pauseStateByGame.Remove(gameId);
+            
+            if (_downloadCancellationTokens.TryGetValue(gameId, out var oldCts))
+            {
+                oldCts.Dispose();
+                _downloadCancellationTokens.Remove(gameId);
+            }
+            
+            if (_downloadCancellationTokens.Count == 0)
+            {
+                IsDownloading = false;
+                DownloadingGameId = null;
+            }
+            
+            if (SelectedGame?.Id == gameId)
+            {
+                IsPaused = false;
+                ProgressPercent = 0;
+                ProgressText = string.Empty;
+            }
             AvailableUpdate = null;
             IsPreloadAvailable = false;
+            OnPropertyChanged(nameof(IsSelectedGameDownloading));
+            OnPropertyChanged(nameof(IsAnyGameDownloading));
         }
     }
 
@@ -599,18 +657,53 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedGame == null || !SelectedGame.IsInstalled) return;
 
+        // Prevent preloading if already downloading
+        if (SelectedGame.IsDownloading)
+        {
+            StatusMessage = $"{SelectedGame.DisplayName} is already being downloaded";
+            return;
+        }
+
+        var gameId = SelectedGame.Id;
+        var gameName = SelectedGame.DisplayName;
+        var game = SelectedGame;
+
         try
         {
+            var cts = new CancellationTokenSource();
+            _downloadCancellationTokens[gameId] = cts;
+            
+            game.IsDownloading = true;
             IsDownloading = true;
-            DownloadingGameId = SelectedGame.Id;
-            StatusMessage = $"Downloading preload for {SelectedGame.DisplayName}...";
+            DownloadingGameId = gameId;
+            OnPropertyChanged(nameof(IsSelectedGameDownloading));
+            OnPropertyChanged(nameof(IsAnyGameDownloading));
+            
+            StatusMessage = $"Downloading preload for {gameName}...";
 
             var progress = new Progress<UpdateProgress>(p =>
             {
-                ProgressPercent = p.PercentComplete;
+                // Use lock to prevent race conditions when multiple downloads update progress
+                lock (_progressUpdateLock)
+                {
+                    var progressText = $"Preloading: {p.PercentComplete:F1}%";
+
+                    // Store progress for this game
+                    _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
+
+                    // Capture selected game ID once inside the lock
+                    var currentSelectedGameId = SelectedGame?.Id;
+                    
+                    // Update UI only if this game is the currently selected game
+                    if (currentSelectedGameId == gameId)
+                    {
+                        ProgressPercent = p.PercentComplete;
+                        ProgressText = progressText;
+                    }
+                }
             });
 
-            var success = await _updateService.DownloadPreloadAsync(SelectedGame.Id, progress);
+            var success = await _updateService.DownloadPreloadAsync(gameId, progress);
 
             StatusMessage = success
                 ? "Preload completed!"
@@ -623,9 +716,30 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         finally
         {
-            IsDownloading = false;
-            DownloadingGameId = null;
-            ProgressPercent = 0;
+            game.IsDownloading = false;
+            _downloadProgressByGame.Remove(gameId);
+            _pauseStateByGame.Remove(gameId);
+            
+            if (_downloadCancellationTokens.TryGetValue(gameId, out var oldCts))
+            {
+                oldCts.Dispose();
+                _downloadCancellationTokens.Remove(gameId);
+            }
+            
+            if (_downloadCancellationTokens.Count == 0)
+            {
+                IsDownloading = false;
+                DownloadingGameId = null;
+            }
+            
+            if (SelectedGame?.Id == gameId)
+            {
+                IsPaused = false;
+                ProgressPercent = 0;
+                ProgressText = string.Empty;
+            }
+            OnPropertyChanged(nameof(IsSelectedGameDownloading));
+            OnPropertyChanged(nameof(IsAnyGameDownloading));
         }
     }
 
@@ -634,121 +748,203 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedGame == null || SelectedGame.IsInstalled) return;
 
-        // Only one download at a time is supported - show message if already downloading
-        if (IsDownloading)
+        // Prevent downloading the same game twice
+        if (SelectedGame.IsDownloading)
         {
-            StatusMessage = "A download is already in progress";
+            StatusMessage = $"{SelectedGame.DisplayName} is already being downloaded";
             return;
         }
 
+        var gameId = SelectedGame.Id;
+        var gameName = SelectedGame.DisplayName;
+        var game = SelectedGame;
+
         try
         {
-            _downloadCts = new CancellationTokenSource();
+            var cts = new CancellationTokenSource();
+            _downloadCancellationTokens[gameId] = cts;
+            
+            // Mark game as downloading
+            game.IsDownloading = true;
             IsDownloading = true;
-            DownloadingGameId = SelectedGame.Id;
-            StatusMessage = $"Fetching download information for {SelectedGame.DisplayName}...";
+            DownloadingGameId = gameId;
+            OnPropertyChanged(nameof(IsSelectedGameDownloading));
+            OnPropertyChanged(nameof(IsAnyGameDownloading));
+            
+            StatusMessage = $"Fetching download information for {gameName}...";
 
             // First, get download info to show size
-            var downloadInfo = await _gameDownloadService.GetGameDownloadInfoAsync(SelectedGame.Id, _downloadCts.Token);
+            var downloadInfo = await _gameDownloadService.GetGameDownloadInfoAsync(gameId, cts.Token);
             if (downloadInfo == null)
             {
                 StatusMessage = "Failed to get download information. Game may not be available for download.";
-                IsDownloading = false;
-                DownloadingGameId = null;
                 return;
             }
 
-            DownloadInfo = downloadInfo;
-            var sizeMb = downloadInfo.TotalSize / 1024.0 / 1024.0;
-            var sizeGb = sizeMb / 1024.0;
-            DownloadSizeText = sizeGb >= 1 ? $"{sizeGb:F2} GB" : $"{sizeMb:F0} MB";
+            // Only update DownloadInfo for the currently selected game
+            if (SelectedGame?.Id == gameId)
+            {
+                DownloadInfo = downloadInfo;
+                var sizeMb = downloadInfo.TotalSize / 1024.0 / 1024.0;
+                var sizeGb = sizeMb / 1024.0;
+                DownloadSizeText = sizeGb >= 1 ? $"{sizeGb:F2} GB" : $"{sizeMb:F0} MB";
+            }
 
-            StatusMessage = $"Downloading {SelectedGame.DisplayName} ({DownloadSizeText})...";
+            StatusMessage = $"Downloading {gameName}...";
 
             var progress = new Progress<GameDownloadProgress>(p =>
             {
-                ProgressPercent = p.PercentComplete;
-                var speedMb = p.SpeedBytesPerSecond / 1024.0 / 1024.0;
-
-                ProgressText = p.State switch
+                // Use lock to prevent race conditions when multiple downloads update progress
+                lock (_progressUpdateLock)
                 {
-                    GameDownloadState.FetchingInfo => "Fetching download information...",
-                    GameDownloadState.Downloading => $"Downloading: {p.PercentComplete:F1}% ({speedMb:F1} MB/s)",
-                    GameDownloadState.DownloadingVoicePacks => $"Downloading voice packs: {p.PercentComplete:F1}%",
-                    GameDownloadState.Verifying => "Verifying downloaded files...",
-                    GameDownloadState.Extracting => "Extracting...",
-                    GameDownloadState.Cleanup => "Cleaning up...",
-                    GameDownloadState.Completed => "Installation complete!",
-                    GameDownloadState.Failed => $"Failed: {p.ErrorMessage}",
-                    _ => $"{p.State}"
-                };
+                    var speedMb = p.SpeedBytesPerSecond / 1024.0 / 1024.0;
 
-                StatusMessage = ProgressText;
+                    var progressText = p.State switch
+                    {
+                        GameDownloadState.FetchingInfo => "Fetching download information...",
+                        GameDownloadState.Downloading => $"Downloading: {p.PercentComplete:F1}% ({speedMb:F1} MB/s)",
+                        GameDownloadState.DownloadingVoicePacks => $"Downloading voice packs: {p.PercentComplete:F1}%",
+                        GameDownloadState.Verifying => "Verifying downloaded files...",
+                        GameDownloadState.Extracting => "Extracting...",
+                        GameDownloadState.Cleanup => "Cleaning up...",
+                        GameDownloadState.Completed => "Installation complete!",
+                        GameDownloadState.Failed => $"Failed: {p.ErrorMessage}",
+                        _ => $"{p.State}"
+                    };
+
+                    // Store progress for this game
+                    _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
+
+                    // Capture selected game ID once inside the lock
+                    var currentSelectedGameId = SelectedGame?.Id;
+                    
+                    // Update UI only if this game is the currently selected game
+                    if (currentSelectedGameId == gameId)
+                    {
+                        ProgressPercent = p.PercentComplete;
+                        ProgressText = progressText;
+                        StatusMessage = progressText;
+                    }
+                }
             });
 
             var success = await _gameDownloadService.DownloadAndInstallGameAsync(
-                SelectedGame.Id,
+                gameId,
                 progress: progress,
-                cancellationToken: _downloadCts.Token);
+                cancellationToken: cts.Token);
 
             if (success)
             {
-                StatusMessage = $"{SelectedGame.DisplayName} installed successfully!";
-                ProgressText = "Installation complete!";
+                StatusMessage = $"{gameName} installed successfully!";
+                if (SelectedGame?.Id == gameId)
+                {
+                    ProgressText = "Installation complete!";
+                }
             }
-            else if (_downloadCts.IsCancellationRequested)
+            else if (cts.IsCancellationRequested)
             {
-                StatusMessage = "Installation cancelled";
+                StatusMessage = $"{gameName} installation cancelled";
             }
             else
             {
-                StatusMessage = "Installation failed";
+                StatusMessage = $"{gameName} installation failed";
             }
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = "Installation cancelled";
+            StatusMessage = $"{gameName} installation cancelled";
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Install failed");
+            Log.Error(ex, "Install failed for {GameId}", gameId);
             StatusMessage = $"Installation failed: {ex.Message}";
         }
         finally
         {
-            IsDownloading = false;
-            DownloadingGameId = null;
-            IsPaused = false;
-            ProgressPercent = 0;
-            ProgressText = string.Empty;
-            DownloadInfo = null;
-            _downloadCts?.Dispose();
-            _downloadCts = null;
+            // Clean up for this specific game
+            game.IsDownloading = false;
+            _downloadProgressByGame.Remove(gameId);
+            _pauseStateByGame.Remove(gameId);
+            
+            if (_downloadCancellationTokens.TryGetValue(gameId, out var oldCts))
+            {
+                oldCts.Dispose();
+                _downloadCancellationTokens.Remove(gameId);
+            }
+            
+            // Update global state only if no more downloads are in progress
+            if (_downloadCancellationTokens.Count == 0)
+            {
+                IsDownloading = false;
+                DownloadingGameId = null;
+            }
+            
+            // Clear progress UI only if this was the selected game
+            if (SelectedGame?.Id == gameId)
+            {
+                IsPaused = false;
+                ProgressPercent = 0;
+                ProgressText = string.Empty;
+                DownloadInfo = null;
+            }
+            
+            OnPropertyChanged(nameof(IsSelectedGameDownloading));
+            OnPropertyChanged(nameof(IsAnyGameDownloading));
         }
     }
 
     [RelayCommand]
     private void CancelDownload()
     {
-        _downloadCts?.Cancel();
-        IsPaused = false;
-        StatusMessage = "Cancelling download...";
+        // Cancel the download for the currently selected game
+        if (SelectedGame != null && _downloadCancellationTokens.TryGetValue(SelectedGame.Id, out var cts))
+        {
+            var gameId = SelectedGame.Id;
+            
+            // If this game is paused, we need to resume its downloads first so the cancellation can be processed
+            if (_pauseStateByGame.TryGetValue(gameId, out var wasPaused) && wasPaused)
+            {
+                _downloadService.ResumeDownloadsContaining(gameId);
+            }
+            
+            cts.Cancel();
+            IsPaused = false;
+            _pauseStateByGame.Remove(gameId);
+            StatusMessage = $"Cancelling download for {SelectedGame.DisplayName}...";
+        }
     }
 
     [RelayCommand]
     private void PauseDownload()
     {
-        _downloadService.PauseAllDownloads();
+        if (SelectedGame == null || !_downloadCancellationTokens.ContainsKey(SelectedGame.Id)) return;
+        
+        var gameId = SelectedGame.Id;
+        
+        // Use the new per-game pause method that only pauses downloads for this game
+        // The gameId is part of the download path, so this will only affect this game's downloads
+        _downloadService.PauseDownloadsContaining(gameId);
+        
+        // Track pause state only for this game
+        _pauseStateByGame[gameId] = true;
         IsPaused = true;
-        StatusMessage = "Download paused";
+        StatusMessage = $"Download paused for {SelectedGame.DisplayName}";
     }
 
     [RelayCommand]
     private void ResumeDownload()
     {
-        _downloadService.ResumeAllDownloads();
+        if (SelectedGame == null || !_downloadCancellationTokens.ContainsKey(SelectedGame.Id)) return;
+        
+        var gameId = SelectedGame.Id;
+        
+        // Use the new per-game resume method that only resumes downloads for this game
+        _downloadService.ResumeDownloadsContaining(gameId);
+        
+        // Track pause state only for this game
+        _pauseStateByGame[gameId] = false;
         IsPaused = false;
-        StatusMessage = "Download resumed";
+        StatusMessage = $"Download resumed for {SelectedGame.DisplayName}";
     }
 
     [RelayCommand]
@@ -873,12 +1069,50 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         // Notify computed properties that depend on SelectedGame
         OnPropertyChanged(nameof(IsSelectedGameDownloading));
-        OnPropertyChanged(nameof(IsOtherGameDownloading));
+        OnPropertyChanged(nameof(IsAnyGameDownloading));
 
         // Always update IsGameRunning when selection changes (even during restore)
         if (value != null)
         {
             IsGameRunning = _launcherService.IsGameRunning(value.Id);
+            
+            // Update progress display for the newly selected game if it's downloading
+            // Use lock to prevent race conditions with progress callbacks
+            lock (_progressUpdateLock)
+            {
+                // Check if this game is downloading by looking at our cancellation token dictionary
+                // This is more reliable than checking value.IsDownloading which might not be in sync
+                var isGameDownloading = _downloadCancellationTokens.ContainsKey(value.Id);
+                
+                if (isGameDownloading && _downloadProgressByGame.TryGetValue(value.Id, out var progress))
+                {
+                    // Restore the stored progress for this game
+                    ProgressPercent = progress.ProgressPercent;
+                    ProgressText = progress.ProgressText;
+                }
+                else if (isGameDownloading)
+                {
+                    // Game is downloading but no progress stored yet - show initial state
+                    ProgressPercent = 0;
+                    ProgressText = "Starting download...";
+                }
+                else
+                {
+                    // Game is not downloading - reset progress display
+                    ProgressPercent = 0;
+                    ProgressText = string.Empty;
+                }
+                
+                // Restore pause state for this game
+                if (isGameDownloading && _pauseStateByGame.TryGetValue(value.Id, out var isPaused))
+                {
+                    IsPaused = isPaused;
+                }
+                else
+                {
+                    IsPaused = false;
+                }
+            }
         }
         else
         {
@@ -910,24 +1144,24 @@ public partial class MainWindowViewModel : ViewModelBase
                 // Check for updates in background
                 _ = CheckForUpdatesAsync();
             }
-            else
+            else if (!value.IsDownloading)
             {
-                // Get download info for non-installed games
+                // Get download info for non-installed, non-downloading games
                 _ = GetDownloadInfoAsync();
             }
         }
     }
-
+
     partial void OnIsDownloadingChanged(bool value)
     {
         OnPropertyChanged(nameof(IsSelectedGameDownloading));
-        OnPropertyChanged(nameof(IsOtherGameDownloading));
+        OnPropertyChanged(nameof(IsAnyGameDownloading));
     }
 
     partial void OnDownloadingGameIdChanged(string? value)
     {
         OnPropertyChanged(nameof(IsSelectedGameDownloading));
-        OnPropertyChanged(nameof(IsOtherGameDownloading));
+        OnPropertyChanged(nameof(IsAnyGameDownloading));
     }
 
     private async Task LoadBackgroundAsync(string gameId)
