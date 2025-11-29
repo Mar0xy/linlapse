@@ -22,6 +22,10 @@ public partial class InstallationService
     [GeneratedRegex(@"(\d+)%\s*(?:-\s*(.+?))?(?:\s*$|[\x08]+|\s+\x08)", RegexOptions.Compiled)]
     private static partial Regex SevenZipProgressRegex();
 
+    // Regex for detecting multi-part archive extensions (e.g., .001, .002, .0001, etc.)
+    [GeneratedRegex(@"^\.(\d+)$", RegexOptions.Compiled)]
+    private static partial Regex MultiPartExtensionRegex();
+
     public event EventHandler<InstallProgress>? InstallProgressChanged;
     public event EventHandler<string>? InstallCompleted;
     public event EventHandler<(string GameId, Exception Error)>? InstallFailed;
@@ -66,9 +70,23 @@ public partial class InstallationService
             Directory.CreateDirectory(installPath);
 
             // Determine archive type and extract
+            // Handle both regular archives (.zip, .7z) and multi-part archives (.zip.001, .7z.001, .zip.0001)
             var extension = Path.GetExtension(archivePath).ToLowerInvariant();
+            var fileName = Path.GetFileName(archivePath).ToLowerInvariant();
 
-            switch (extension)
+            // For multi-part archives, check the base filename to determine type
+            var isMultiPart = MultiPartExtensionRegex().IsMatch(extension);
+            var archiveType = extension;
+            
+            if (isMultiPart)
+            {
+                // Get the extension before the part number (e.g., ".zip" from "file.zip.001")
+                var baseNameWithoutPart = Path.GetFileNameWithoutExtension(archivePath);
+                archiveType = Path.GetExtension(baseNameWithoutPart).ToLowerInvariant();
+                Log.Debug("Multi-part archive detected: {File}, base type: {Type}", fileName, archiveType);
+            }
+
+            switch (archiveType)
             {
                 case ".zip":
                     await ExtractZipAsync(archivePath, installPath, installProgress, progress, cancellationToken);
@@ -77,7 +95,7 @@ public partial class InstallationService
                     await Extract7zAsync(archivePath, installPath, installProgress, progress, cancellationToken);
                     break;
                 default:
-                    throw new NotSupportedException($"Archive format not supported: {extension}");
+                    throw new NotSupportedException($"Archive format not supported: {archiveType} (file: {fileName})");
             }
 
             // Update game info - UpdateGameInstallPath will set the state based on whether
