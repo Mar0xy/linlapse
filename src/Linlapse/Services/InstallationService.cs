@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Linlapse.Models;
@@ -114,20 +113,299 @@ public partial class InstallationService
         IProgress<InstallProgress>? progress,
         CancellationToken cancellationToken)
     {
+        // Try to use native unzip/7z command for much faster extraction
+        var sevenZipPath = Find7zExecutable();
+        if (!string.IsNullOrEmpty(sevenZipPath))
+        {
+            // 7z can extract ZIP files and supports all compression methods
+            await ExtractWith7zCommandAsync(sevenZipPath, archivePath, destinationPath, installProgress, progress, cancellationToken);
+            return;
+        }
+
+        var unzipPath = FindUnzipExecutable();
+        if (!string.IsNullOrEmpty(unzipPath))
+        {
+            await ExtractWithUnzipCommandAsync(unzipPath, archivePath, destinationPath, installProgress, progress, cancellationToken);
+            return;
+        }
+
+        // Fallback to SharpCompress if native tools are not available
+        // SharpCompress supports additional compression methods like LZMA, Deflate64, PPMd, BZip2, etc.
+        // that are commonly used in multi-part game archives
+        Log.Warning("Native unzip/7z not found, falling back to SharpCompress (slower). Install p7zip-full or unzip for better performance.");
+        await ExtractWithSharpCompressAsync(archivePath, destinationPath, installProgress, progress, cancellationToken);
+    }
+
+    /// <summary>
+    /// Find the unzip executable on the system
+    /// </summary>
+    private static string? FindUnzipExecutable()
+    {
+        try
+        {
+            var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "which",
+                    Arguments = "unzip",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+            process.Start();
+            var path = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit();
+            
+            if (process.ExitCode == 0 && !string.IsNullOrEmpty(path) && File.Exists(path))
+            {
+                return path;
+            }
+        }
+        catch
+        {
+            // Ignore and return null
+        }
+
+        // Check common paths directly
+        var commonPaths = new[] { "/usr/bin/unzip", "/usr/local/bin/unzip" };
+        foreach (var path in commonPaths)
+        {
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Extract ZIP using native unzip command (faster than SharpCompress)
+    /// </summary>
+    private async Task ExtractWithUnzipCommandAsync(
+        string unzipPath,
+        string archivePath,
+        string destinationPath,
+        InstallProgress installProgress,
+        IProgress<InstallProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        // Get archive info first for progress reporting
+        var archiveInfo = await GetZipArchiveInfoAsync(archivePath, cancellationToken);
+        installProgress.TotalFiles = archiveInfo.FileCount;
+        installProgress.TotalBytes = archiveInfo.TotalSize;
+
+        progress?.Report(installProgress);
+        InstallProgressChanged?.Invoke(this, installProgress);
+
+        // Validate destination path
+        var fullDestinationPath = Path.GetFullPath(destinationPath);
+        Directory.CreateDirectory(fullDestinationPath);
+
+        // Run unzip extraction
+        // -o: overwrite files without prompting
+        // -d: extract to directory
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = unzipPath,
+                Arguments = $"-o \"{archivePath}\" -d \"{fullDestinationPath}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        try
+        {
+            process.Start();
+
+            // Read output for progress (unzip outputs file names as it extracts)
+            var stdoutTask = Task.Run(async () =>
+            {
+                var lastProgressReport = DateTime.UtcNow;
+                var progressReportInterval = TimeSpan.FromMilliseconds(250);
+                var filesProcessed = 0;
+
+                try
+                {
+                    string? line;
+                    while ((line = await process.StandardOutput.ReadLineAsync(cancellationToken)) != null)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        
+                        // unzip outputs lines like "  inflating: filename" or "  extracting: filename"
+                        if (line.Contains("inflating:") || line.Contains("extracting:"))
+                        {
+                            filesProcessed++;
+                            var colonIndex = line.IndexOf(':');
+                            if (colonIndex >= 0 && colonIndex < line.Length - 1)
+                            {
+                                installProgress.CurrentFile = line[(colonIndex + 1)..].Trim();
+                            }
+                            installProgress.ProcessedFiles = filesProcessed;
+                            
+                            // Estimate bytes processed based on file count
+                            if (installProgress.TotalFiles > 0)
+                            {
+                                installProgress.ProcessedBytes = (long)(installProgress.TotalBytes * 
+                                    ((double)filesProcessed / installProgress.TotalFiles));
+                            }
+
+                            var now = DateTime.UtcNow;
+                            if (now - lastProgressReport >= progressReportInterval)
+                            {
+                                progress?.Report(installProgress);
+                                InstallProgressChanged?.Invoke(this, installProgress);
+                                lastProgressReport = now;
+                            }
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected when cancellation is requested
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Error reading unzip progress output");
+                }
+            }, cancellationToken);
+
+            // Wait for process to complete or cancellation
+            using var registration = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(true);
+                    }
+                }
+                catch { }
+            });
+
+            await process.WaitForExitAsync(cancellationToken);
+            await stdoutTask;
+
+            if (process.ExitCode != 0)
+            {
+                var stderr = await process.StandardError.ReadToEndAsync(cancellationToken);
+                throw new Exception($"unzip extraction failed with exit code {process.ExitCode}: {stderr}");
+            }
+
+            // Final progress report
+            installProgress.ProcessedFiles = installProgress.TotalFiles;
+            installProgress.ProcessedBytes = installProgress.TotalBytes;
+            progress?.Report(installProgress);
+            InstallProgressChanged?.Invoke(this, installProgress);
+
+            Log.Information("ZIP extraction completed using native unzip for {Archive}", archivePath);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                try { process.Kill(true); } catch { }
+            }
+            process.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Get ZIP archive info (file count and total size)
+    /// </summary>
+    private static async Task<(int FileCount, long TotalSize)> GetZipArchiveInfoAsync(
+        string archivePath,
+        CancellationToken cancellationToken)
+    {
+        // Try using unzip -l to list contents
+        try
+        {
+            var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "unzip",
+                    Arguments = $"-l \"{archivePath}\"",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.Start();
+            var output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
+
+            if (process.ExitCode == 0)
+            {
+                var fileCount = 0;
+                long totalSize = 0;
+
+                // Parse the output - unzip -l format has columns: Length Date Time Name
+                var lines = output.Split('\n');
+                foreach (var line in lines)
+                {
+                    var trimmed = line.Trim();
+                    if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("Archive:") || 
+                        trimmed.StartsWith("Length") || trimmed.StartsWith("----"))
+                        continue;
+
+                    // Try to parse the size from the first column
+                    var parts = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length >= 4 && long.TryParse(parts[0], out var size))
+                    {
+                        totalSize += size;
+                        fileCount++;
+                    }
+                }
+
+                if (fileCount > 0)
+                {
+                    return (fileCount, totalSize);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore and fall back to estimate
+        }
+
+        // Fall back to estimate from file size
+        var fileInfo = new FileInfo(archivePath);
+        return (1000, fileInfo.Length * 3); // Rough estimate
+    }
+
+    /// <summary>
+    /// Fallback extraction using SharpCompress (slower but works without native tools
+    /// and supports additional compression methods)
+    /// </summary>
+    private async Task ExtractWithSharpCompressAsync(
+        string archivePath,
+        string destinationPath,
+        InstallProgress installProgress,
+        IProgress<InstallProgress>? progress,
+        CancellationToken cancellationToken)
+    {
         await Task.Run(() =>
         {
-            using var archive = ZipFile.OpenRead(archivePath);
-            var entries = archive.Entries.ToList();
-            installProgress.TotalFiles = entries.Count;
-            installProgress.TotalBytes = entries.Sum(e => e.Length);
+            using var archive = ArchiveFactory.Open(archivePath);
+            var fileEntries = archive.Entries.Where(e => !e.IsDirectory).ToList();
+            installProgress.TotalFiles = fileEntries.Count;
+            installProgress.TotalBytes = fileEntries.Sum(e => e.Size);
 
-            // Get the full destination path for security validation
+            // Get the full path of destination for validation
             var fullDestinationPath = Path.GetFullPath(destinationPath);
 
-            // First pass: create all directories (must be sequential to avoid race conditions)
-            var directories = entries
-                .Where(e => string.IsNullOrEmpty(e.Name))
-                .Select(e => Path.Combine(destinationPath, e.FullName))
+            // Pre-create all directories to avoid repeated creation during extraction
+            var directories = fileEntries
+                .Select(e => Path.GetDirectoryName(Path.Combine(destinationPath, e.Key ?? string.Empty)))
+                .Where(d => !string.IsNullOrEmpty(d))
                 .Distinct()
                 .ToList();
 
@@ -136,87 +414,52 @@ public partial class InstallationService
                 cancellationToken.ThrowIfCancellationRequested();
                 
                 // Security: validate directory path
-                var fullDir = Path.GetFullPath(dir);
-                if (!fullDir.StartsWith(fullDestinationPath, StringComparison.Ordinal))
+                var fullDir = Path.GetFullPath(dir!);
+                if (fullDir.StartsWith(fullDestinationPath, StringComparison.Ordinal))
                 {
-                    Log.Warning("Skipping potentially malicious directory entry: {Dir}", dir);
-                    continue;
+                    Directory.CreateDirectory(dir!);
                 }
-                Directory.CreateDirectory(dir);
             }
 
-            // Also pre-create directories for files
-            var fileDirectories = entries
-                .Where(e => !string.IsNullOrEmpty(e.Name))
-                .Select(e => Path.GetDirectoryName(Path.Combine(destinationPath, e.FullName)))
-                .Where(d => !string.IsNullOrEmpty(d))
-                .Distinct()
-                .ToList();
+            var lastProgressReport = DateTime.UtcNow;
+            var progressReportInterval = TimeSpan.FromMilliseconds(100); // Report every 100ms
 
-            foreach (var dir in fileDirectories)
+            foreach (var entry in fileEntries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                var entryKey = entry.Key ?? string.Empty;
                 
-                // Security: validate directory path
-                var fullDir = Path.GetFullPath(dir!);
-                if (!fullDir.StartsWith(fullDestinationPath, StringComparison.Ordinal))
+                // Validate entry key to prevent path traversal attacks
+                // Use case-sensitive comparison (Ordinal) for proper security on Linux file systems
+                var destinationFileName = Path.GetFullPath(Path.Combine(destinationPath, entryKey));
+                if (!destinationFileName.StartsWith(fullDestinationPath, StringComparison.Ordinal))
                 {
+                    Log.Warning("Skipping potentially malicious archive entry: {EntryKey}", entryKey);
                     continue;
                 }
-                Directory.CreateDirectory(dir!);
+
+                entry.WriteToFile(destinationFileName, new ExtractionOptions
+                {
+                    ExtractFullPath = false,
+                    Overwrite = true
+                });
+
+                installProgress.ProcessedFiles++;
+                installProgress.ProcessedBytes += entry.Size;
+                installProgress.CurrentFile = entryKey;
+                
+                // Rate-limited progress reporting for better performance
+                var now = DateTime.UtcNow;
+                if (now - lastProgressReport >= progressReportInterval)
+                {
+                    progress?.Report(installProgress);
+                    InstallProgressChanged?.Invoke(this, installProgress);
+                    lastProgressReport = now;
+                }
             }
 
-            // Second pass: extract files in parallel for better performance
-            var fileEntries = entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
-            var processedFiles = 0;
-            var processedBytes = 0L;
-            var progressLock = new object();
-            var lastProgressReport = DateTime.UtcNow;
-            var progressReportInterval = TimeSpan.FromMilliseconds(100);
-
-            // Use parallel extraction with degree of parallelism optimized for I/O-bound operations
-            var parallelOptions = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount * 2),
-                CancellationToken = cancellationToken
-            };
-
-            Parallel.ForEach(fileEntries, parallelOptions, entry =>
-            {
-                var destinationFileName = Path.Combine(destinationPath, entry.FullName);
-                
-                // Security: validate file path
-                var fullPath = Path.GetFullPath(destinationFileName);
-                if (!fullPath.StartsWith(fullDestinationPath, StringComparison.Ordinal))
-                {
-                    Log.Warning("Skipping potentially malicious archive entry: {Entry}", entry.FullName);
-                    return;
-                }
-
-                entry.ExtractToFile(destinationFileName, overwrite: true);
-
-                lock (progressLock)
-                {
-                    processedFiles++;
-                    processedBytes += entry.Length;
-                    installProgress.ProcessedFiles = processedFiles;
-                    installProgress.ProcessedBytes = processedBytes;
-                    installProgress.CurrentFile = entry.FullName;
-                    
-                    // Rate-limited progress reporting for better performance
-                    var now = DateTime.UtcNow;
-                    if (now - lastProgressReport >= progressReportInterval)
-                    {
-                        progress?.Report(installProgress);
-                        InstallProgressChanged?.Invoke(this, installProgress);
-                        lastProgressReport = now;
-                    }
-                }
-            });
-
             // Final progress report
-            installProgress.ProcessedFiles = processedFiles;
-            installProgress.ProcessedBytes = processedBytes;
             progress?.Report(installProgress);
             InstallProgressChanged?.Invoke(this, installProgress);
         }, cancellationToken);

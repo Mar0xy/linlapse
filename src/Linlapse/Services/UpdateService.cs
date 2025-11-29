@@ -1,8 +1,9 @@
-using System.IO.Compression;
 using System.Net.Http;
 using System.Text.Json;
 using Linlapse.Models;
 using Serilog;
+using SharpCompress.Archives;
+using SharpCompress.Common;
 using SharpHDiffPatch.Core;
 
 namespace Linlapse.Services;
@@ -425,37 +426,60 @@ public class UpdateService : IDisposable
             if (!downloadSuccess)
                 return false;
 
-            // Extract update
+            // Extract update using SharpCompress to support additional compression methods
+            // (LZMA, Deflate64, PPMd, BZip2, etc.) commonly used in game archives
             updateProgress.State = UpdateState.Extracting;
             progress?.Report(updateProgress);
 
             await Task.Run(() =>
             {
-                using var archive = System.IO.Compression.ZipFile.OpenRead(updatePath);
-                var totalFiles = archive.Entries.Count;
+                using var archive = ArchiveFactory.Open(updatePath);
+                var fileEntries = archive.Entries.Where(e => !e.IsDirectory).ToList();
+                var totalFiles = fileEntries.Count;
                 var processed = 0;
 
-                foreach (var entry in archive.Entries)
+                // Get the full path of install directory for path traversal validation
+                var fullInstallPath = Path.GetFullPath(game.InstallPath);
+
+                // Pre-create all directories
+                var directories = fileEntries
+                    .Select(e => Path.GetDirectoryName(Path.Combine(game.InstallPath, e.Key ?? string.Empty)))
+                    .Where(d => !string.IsNullOrEmpty(d))
+                    .Distinct()
+                    .ToList();
+
+                foreach (var dir in directories)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var fullDir = Path.GetFullPath(dir!);
+                    if (fullDir.StartsWith(fullInstallPath, StringComparison.Ordinal))
+                    {
+                        Directory.CreateDirectory(dir!);
+                    }
+                }
+
+                foreach (var entry in fileEntries)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var destPath = Path.Combine(game.InstallPath, entry.FullName);
+                    var entryKey = entry.Key ?? string.Empty;
+                    var destPath = Path.GetFullPath(Path.Combine(game.InstallPath, entryKey));
 
-                    if (string.IsNullOrEmpty(entry.Name))
+                    // Security: validate path traversal
+                    if (!destPath.StartsWith(fullInstallPath, StringComparison.Ordinal))
                     {
-                        Directory.CreateDirectory(destPath);
+                        Log.Warning("Skipping potentially malicious archive entry: {EntryKey}", entryKey);
+                        continue;
                     }
-                    else
-                    {
-                        var dir = Path.GetDirectoryName(destPath);
-                        if (!string.IsNullOrEmpty(dir))
-                            Directory.CreateDirectory(dir);
 
-                        entry.ExtractToFile(destPath, overwrite: true);
-                    }
+                    entry.WriteToFile(destPath, new ExtractionOptions
+                    {
+                        ExtractFullPath = false,
+                        Overwrite = true
+                    });
 
                     processed++;
-                    updateProgress.CurrentFile = entry.FullName;
+                    updateProgress.CurrentFile = entryKey;
                     updateProgress.ProcessedFiles = processed;
                     updateProgress.TotalFiles = totalFiles;
                     progress?.Report(updateProgress);
