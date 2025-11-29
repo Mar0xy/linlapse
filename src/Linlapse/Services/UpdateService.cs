@@ -452,10 +452,12 @@ public class UpdateService : IDisposable
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var fullDir = Path.GetFullPath(dir!);
-                    if (fullDir.StartsWith(fullInstallPath, StringComparison.Ordinal))
+                    if (!fullDir.StartsWith(fullInstallPath, StringComparison.Ordinal))
                     {
-                        Directory.CreateDirectory(dir!);
+                        Log.Warning("Skipping potentially malicious directory entry: {Dir}", dir);
+                        continue;
                     }
+                    Directory.CreateDirectory(dir!);
                 }
 
                 foreach (var entry in fileEntries)

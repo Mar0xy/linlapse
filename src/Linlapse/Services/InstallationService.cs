@@ -377,8 +377,11 @@ public partial class InstallationService
         }
 
         // Fall back to estimate from file size
+        // These are rough estimates when we can't determine actual archive contents
+        const int EstimatedFileCount = 1000;
+        const int CompressionRatioMultiplier = 3;
         var fileInfo = new FileInfo(archivePath);
-        return (1000, fileInfo.Length * 3); // Rough estimate
+        return (EstimatedFileCount, fileInfo.Length * CompressionRatioMultiplier);
     }
 
     /// <summary>
@@ -415,14 +418,16 @@ public partial class InstallationService
                 
                 // Security: validate directory path
                 var fullDir = Path.GetFullPath(dir!);
-                if (fullDir.StartsWith(fullDestinationPath, StringComparison.Ordinal))
+                if (!fullDir.StartsWith(fullDestinationPath, StringComparison.Ordinal))
                 {
-                    Directory.CreateDirectory(dir!);
+                    Log.Warning("Skipping potentially malicious directory entry: {Dir}", dir);
+                    continue;
                 }
+                Directory.CreateDirectory(dir!);
             }
 
             var lastProgressReport = DateTime.UtcNow;
-            var progressReportInterval = TimeSpan.FromMilliseconds(100); // Report every 100ms
+            var progressReportInterval = TimeSpan.FromMilliseconds(250); // Report every 250ms for better performance
 
             foreach (var entry in fileEntries)
             {
