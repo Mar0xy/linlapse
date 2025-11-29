@@ -25,6 +25,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly Dictionary<string, CancellationTokenSource> _downloadCancellationTokens = new();
     // Dictionary to track download progress for each downloading game
     private readonly Dictionary<string, (double ProgressPercent, string ProgressText)> _downloadProgressByGame = new();
+    // Lock object to synchronize progress updates across multiple downloads
+    private readonly object _progressUpdateLock = new();
     private bool _isRestoringSelection;
 
     [ObservableProperty]
@@ -583,24 +585,31 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var progress = new Progress<UpdateProgress>(p =>
             {
-                var progressText = p.State switch
+                // Use lock to prevent race conditions when multiple downloads update progress
+                lock (_progressUpdateLock)
                 {
-                    UpdateState.DownloadingPatch => "Downloading delta patch...",
-                    UpdateState.DownloadingFull => "Downloading full update...",
-                    UpdateState.ApplyingPatch => "Applying patch...",
-                    UpdateState.Extracting => "Extracting files...",
-                    _ => "Updating..."
-                };
+                    var progressText = p.State switch
+                    {
+                        UpdateState.DownloadingPatch => "Downloading delta patch...",
+                        UpdateState.DownloadingFull => "Downloading full update...",
+                        UpdateState.ApplyingPatch => "Applying patch...",
+                        UpdateState.Extracting => "Extracting files...",
+                        _ => "Updating..."
+                    };
 
-                // Store progress for this game
-                _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
+                    // Store progress for this game
+                    _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
 
-                // Update UI if this is the currently selected game
-                if (SelectedGame?.Id == gameId)
-                {
-                    ProgressPercent = p.PercentComplete;
-                    ProgressText = progressText;
-                    StatusMessage = progressText;
+                    // Capture selected game ID once inside the lock
+                    var currentSelectedGameId = SelectedGame?.Id;
+                    
+                    // Update UI only if this game is the currently selected game
+                    if (currentSelectedGameId == gameId)
+                    {
+                        ProgressPercent = p.PercentComplete;
+                        ProgressText = progressText;
+                        StatusMessage = progressText;
+                    }
                 }
             });
 
@@ -675,16 +684,23 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var progress = new Progress<UpdateProgress>(p =>
             {
-                var progressText = $"Preloading: {p.PercentComplete:F1}%";
-
-                // Store progress for this game
-                _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
-
-                // Update UI if this is the currently selected game
-                if (SelectedGame?.Id == gameId)
+                // Use lock to prevent race conditions when multiple downloads update progress
+                lock (_progressUpdateLock)
                 {
-                    ProgressPercent = p.PercentComplete;
-                    ProgressText = progressText;
+                    var progressText = $"Preloading: {p.PercentComplete:F1}%";
+
+                    // Store progress for this game
+                    _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
+
+                    // Capture selected game ID once inside the lock
+                    var currentSelectedGameId = SelectedGame?.Id;
+                    
+                    // Update UI only if this game is the currently selected game
+                    if (currentSelectedGameId == gameId)
+                    {
+                        ProgressPercent = p.PercentComplete;
+                        ProgressText = progressText;
+                    }
                 }
             });
 
@@ -777,30 +793,37 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var progress = new Progress<GameDownloadProgress>(p =>
             {
-                var speedMb = p.SpeedBytesPerSecond / 1024.0 / 1024.0;
-
-                var progressText = p.State switch
+                // Use lock to prevent race conditions when multiple downloads update progress
+                lock (_progressUpdateLock)
                 {
-                    GameDownloadState.FetchingInfo => "Fetching download information...",
-                    GameDownloadState.Downloading => $"Downloading: {p.PercentComplete:F1}% ({speedMb:F1} MB/s)",
-                    GameDownloadState.DownloadingVoicePacks => $"Downloading voice packs: {p.PercentComplete:F1}%",
-                    GameDownloadState.Verifying => "Verifying downloaded files...",
-                    GameDownloadState.Extracting => "Extracting...",
-                    GameDownloadState.Cleanup => "Cleaning up...",
-                    GameDownloadState.Completed => "Installation complete!",
-                    GameDownloadState.Failed => $"Failed: {p.ErrorMessage}",
-                    _ => $"{p.State}"
-                };
+                    var speedMb = p.SpeedBytesPerSecond / 1024.0 / 1024.0;
 
-                // Store progress for this game
-                _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
+                    var progressText = p.State switch
+                    {
+                        GameDownloadState.FetchingInfo => "Fetching download information...",
+                        GameDownloadState.Downloading => $"Downloading: {p.PercentComplete:F1}% ({speedMb:F1} MB/s)",
+                        GameDownloadState.DownloadingVoicePacks => $"Downloading voice packs: {p.PercentComplete:F1}%",
+                        GameDownloadState.Verifying => "Verifying downloaded files...",
+                        GameDownloadState.Extracting => "Extracting...",
+                        GameDownloadState.Cleanup => "Cleaning up...",
+                        GameDownloadState.Completed => "Installation complete!",
+                        GameDownloadState.Failed => $"Failed: {p.ErrorMessage}",
+                        _ => $"{p.State}"
+                    };
 
-                // Update UI if this is the currently selected game
-                if (SelectedGame?.Id == gameId)
-                {
-                    ProgressPercent = p.PercentComplete;
-                    ProgressText = progressText;
-                    StatusMessage = progressText;
+                    // Store progress for this game
+                    _downloadProgressByGame[gameId] = (p.PercentComplete, progressText);
+
+                    // Capture selected game ID once inside the lock
+                    var currentSelectedGameId = SelectedGame?.Id;
+                    
+                    // Update UI only if this game is the currently selected game
+                    if (currentSelectedGameId == gameId)
+                    {
+                        ProgressPercent = p.PercentComplete;
+                        ProgressText = progressText;
+                        StatusMessage = progressText;
+                    }
                 }
             });
 
@@ -1026,17 +1049,21 @@ public partial class MainWindowViewModel : ViewModelBase
             IsGameRunning = _launcherService.IsGameRunning(value.Id);
             
             // Update progress display for the newly selected game if it's downloading
-            if (value.IsDownloading && _downloadProgressByGame.TryGetValue(value.Id, out var progress))
+            // Use lock to prevent race conditions with progress callbacks
+            lock (_progressUpdateLock)
             {
-                // Restore the stored progress for this game
-                ProgressPercent = progress.ProgressPercent;
-                ProgressText = progress.ProgressText;
-            }
-            else if (!value.IsDownloading)
-            {
-                // Reset progress display if the selected game is not downloading
-                ProgressPercent = 0;
-                ProgressText = string.Empty;
+                if (value.IsDownloading && _downloadProgressByGame.TryGetValue(value.Id, out var progress))
+                {
+                    // Restore the stored progress for this game
+                    ProgressPercent = progress.ProgressPercent;
+                    ProgressText = progress.ProgressText;
+                }
+                else if (!value.IsDownloading)
+                {
+                    // Reset progress display if the selected game is not downloading
+                    ProgressPercent = 0;
+                    ProgressText = string.Empty;
+                }
             }
         }
         else
