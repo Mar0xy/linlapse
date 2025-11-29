@@ -152,10 +152,18 @@ public class GameDownloadService : IDisposable
                 var segment = segments[i];
                 downloadProgress.CurrentFile = $"Part {i + 1} of {segments.Count}";
                 
-                var extension = Path.GetExtension(new Uri(segment.DownloadUrl).AbsolutePath);
-                if (string.IsNullOrEmpty(extension)) extension = ".zip";
+                // Extract original filename from URL to preserve proper naming for split archive extraction
+                var uri = new Uri(segment.DownloadUrl);
+                var originalFileName = Path.GetFileName(uri.AbsolutePath);
+                if (string.IsNullOrEmpty(originalFileName))
+                {
+                    // Fallback to generic naming if URL doesn't contain filename
+                    var extension = Path.GetExtension(uri.AbsolutePath);
+                    if (string.IsNullOrEmpty(extension)) extension = ".zip";
+                    originalFileName = $"game_package_part{segment.PartNumber}{extension}";
+                }
                 
-                var segmentPath = Path.Combine(tempDir, $"game_package_part{segment.PartNumber}{extension}");
+                var segmentPath = Path.Combine(tempDir, originalFileName);
 
                 var segmentProgress = new Progress<DownloadProgress>(dp =>
                 {
