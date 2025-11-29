@@ -115,6 +115,7 @@ public class DownloadService : IDisposable
                 if (_isPaused.TryGetValue(fileName, out var isPaused) && isPaused)
                 {
                     downloadProgress.State = DownloadState.Paused;
+                    downloadProgress.SpeedBytesPerSecond = 0; // Reset speed when paused
                     progress?.Report(downloadProgress);
                     DownloadProgressChanged?.Invoke(this, downloadProgress);
                     
@@ -126,6 +127,7 @@ public class DownloadService : IDisposable
                     // Reset timing for accurate speed calculation after resume
                     startTime = DateTime.UtcNow;
                     bytesAtStart = downloadProgress.BytesDownloaded;
+                    lastProgressReport = DateTime.UtcNow; // Also reset last report time
                 }
 
                 await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cts.Token);
@@ -134,14 +136,22 @@ public class DownloadService : IDisposable
                 // Report progress every 100ms
                 if ((DateTime.UtcNow - lastProgressReport).TotalMilliseconds >= 100)
                 {
-                    var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
-                    if (elapsed > 0)
+                    // Check if paused again - don't calculate speed if we're paused
+                    if (_isPaused.TryGetValue(fileName, out var currentlyPaused) && currentlyPaused)
                     {
-                        downloadProgress.SpeedBytesPerSecond = (downloadProgress.BytesDownloaded - bytesAtStart) / elapsed;
-                        if (downloadProgress.SpeedBytesPerSecond > 0)
+                        downloadProgress.SpeedBytesPerSecond = 0;
+                    }
+                    else
+                    {
+                        var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
+                        if (elapsed > 0)
                         {
-                            var remainingBytes = totalBytes - downloadProgress.BytesDownloaded;
-                            downloadProgress.EstimatedTimeRemaining = TimeSpan.FromSeconds(remainingBytes / downloadProgress.SpeedBytesPerSecond);
+                            downloadProgress.SpeedBytesPerSecond = (downloadProgress.BytesDownloaded - bytesAtStart) / elapsed;
+                            if (downloadProgress.SpeedBytesPerSecond > 0)
+                            {
+                                var remainingBytes = totalBytes - downloadProgress.BytesDownloaded;
+                                downloadProgress.EstimatedTimeRemaining = TimeSpan.FromSeconds(remainingBytes / downloadProgress.SpeedBytesPerSecond);
+                            }
                         }
                     }
 
