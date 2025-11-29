@@ -1086,21 +1086,31 @@ public partial class MainWindowViewModel : ViewModelBase
             // Use lock to prevent race conditions with progress callbacks
             lock (_progressUpdateLock)
             {
-                if (value.IsDownloading && _downloadProgressByGame.TryGetValue(value.Id, out var progress))
+                // Check if this game is downloading by looking at our cancellation token dictionary
+                // This is more reliable than checking value.IsDownloading which might not be in sync
+                var isGameDownloading = _downloadCancellationTokens.ContainsKey(value.Id);
+                
+                if (isGameDownloading && _downloadProgressByGame.TryGetValue(value.Id, out var progress))
                 {
                     // Restore the stored progress for this game
                     ProgressPercent = progress.ProgressPercent;
                     ProgressText = progress.ProgressText;
                 }
-                else if (!value.IsDownloading)
+                else if (isGameDownloading)
                 {
-                    // Reset progress display if the selected game is not downloading
+                    // Game is downloading but no progress stored yet - show initial state
+                    ProgressPercent = 0;
+                    ProgressText = "Starting download...";
+                }
+                else
+                {
+                    // Game is not downloading - reset progress display
                     ProgressPercent = 0;
                     ProgressText = string.Empty;
                 }
                 
                 // Restore pause state for this game
-                if (value.IsDownloading && _pauseStateByGame.TryGetValue(value.Id, out var isPaused))
+                if (isGameDownloading && _pauseStateByGame.TryGetValue(value.Id, out var isPaused))
                 {
                     IsPaused = isPaused;
                 }
