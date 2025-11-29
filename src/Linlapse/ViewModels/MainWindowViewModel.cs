@@ -899,8 +899,18 @@ public partial class MainWindowViewModel : ViewModelBase
         // Cancel the download for the currently selected game
         if (SelectedGame != null && _downloadCancellationTokens.TryGetValue(SelectedGame.Id, out var cts))
         {
+            var gameId = SelectedGame.Id;
+            
+            // If this game is paused, we need to resume all downloads first so the cancellation can be processed
+            // This also handles the case where other games' downloads might be stuck in paused state
+            if (_pauseStateByGame.TryGetValue(gameId, out var wasPaused) && wasPaused)
+            {
+                _downloadService.ResumeAllDownloads();
+            }
+            
             cts.Cancel();
             IsPaused = false;
+            _pauseStateByGame.Remove(gameId);
             StatusMessage = $"Cancelling download for {SelectedGame.DisplayName}...";
         }
     }
@@ -910,15 +920,18 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedGame == null || !SelectedGame.IsDownloading) return;
         
-        var gameId = SelectedGame.Id;
-        
-        // Pause all downloads for this game (there may be multiple file downloads)
+        // Note: PauseAllDownloads() pauses ALL active downloads across all games
+        // This is a limitation of the current download service architecture
         _downloadService.PauseAllDownloads();
         
-        // Track pause state for this game
-        _pauseStateByGame[gameId] = true;
+        // Mark ALL downloading games as paused (since PauseAllDownloads affects all)
+        foreach (var gameId in _downloadCancellationTokens.Keys.ToList())
+        {
+            _pauseStateByGame[gameId] = true;
+        }
+        
         IsPaused = true;
-        StatusMessage = $"Download paused for {SelectedGame.DisplayName}";
+        StatusMessage = $"Downloads paused";
     }
 
     [RelayCommand]
@@ -926,15 +939,18 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedGame == null || !SelectedGame.IsDownloading) return;
         
-        var gameId = SelectedGame.Id;
-        
-        // Resume all downloads for this game
+        // Note: ResumeAllDownloads() resumes ALL paused downloads across all games
+        // This is a limitation of the current download service architecture
         _downloadService.ResumeAllDownloads();
         
-        // Track pause state for this game
-        _pauseStateByGame[gameId] = false;
+        // Mark ALL downloading games as not paused (since ResumeAllDownloads affects all)
+        foreach (var gameId in _downloadCancellationTokens.Keys.ToList())
+        {
+            _pauseStateByGame[gameId] = false;
+        }
+        
         IsPaused = false;
-        StatusMessage = $"Download resumed for {SelectedGame.DisplayName}";
+        StatusMessage = $"Downloads resumed";
     }
 
     [RelayCommand]
