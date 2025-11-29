@@ -25,6 +25,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly Dictionary<string, CancellationTokenSource> _downloadCancellationTokens = new();
     // Dictionary to track download progress for each downloading game
     private readonly Dictionary<string, (double ProgressPercent, string ProgressText)> _downloadProgressByGame = new();
+    // Dictionary to track pause state for each downloading game
+    private readonly Dictionary<string, bool> _pauseStateByGame = new();
     // Lock object to synchronize progress updates across multiple downloads
     private readonly object _progressUpdateLock = new();
     private bool _isRestoringSelection;
@@ -623,6 +625,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             game.IsDownloading = false;
             _downloadProgressByGame.Remove(gameId);
+            _pauseStateByGame.Remove(gameId);
             
             if (_downloadCancellationTokens.TryGetValue(gameId, out var oldCts))
             {
@@ -638,6 +641,7 @@ public partial class MainWindowViewModel : ViewModelBase
             
             if (SelectedGame?.Id == gameId)
             {
+                IsPaused = false;
                 ProgressPercent = 0;
                 ProgressText = string.Empty;
             }
@@ -714,6 +718,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             game.IsDownloading = false;
             _downloadProgressByGame.Remove(gameId);
+            _pauseStateByGame.Remove(gameId);
             
             if (_downloadCancellationTokens.TryGetValue(gameId, out var oldCts))
             {
@@ -729,6 +734,7 @@ public partial class MainWindowViewModel : ViewModelBase
             
             if (SelectedGame?.Id == gameId)
             {
+                IsPaused = false;
                 ProgressPercent = 0;
                 ProgressText = string.Empty;
             }
@@ -858,6 +864,7 @@ public partial class MainWindowViewModel : ViewModelBase
             // Clean up for this specific game
             game.IsDownloading = false;
             _downloadProgressByGame.Remove(gameId);
+            _pauseStateByGame.Remove(gameId);
             
             if (_downloadCancellationTokens.TryGetValue(gameId, out var oldCts))
             {
@@ -901,17 +908,33 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void PauseDownload()
     {
+        if (SelectedGame == null || !SelectedGame.IsDownloading) return;
+        
+        var gameId = SelectedGame.Id;
+        
+        // Pause all downloads for this game (there may be multiple file downloads)
         _downloadService.PauseAllDownloads();
+        
+        // Track pause state for this game
+        _pauseStateByGame[gameId] = true;
         IsPaused = true;
-        StatusMessage = "Download paused";
+        StatusMessage = $"Download paused for {SelectedGame.DisplayName}";
     }
 
     [RelayCommand]
     private void ResumeDownload()
     {
+        if (SelectedGame == null || !SelectedGame.IsDownloading) return;
+        
+        var gameId = SelectedGame.Id;
+        
+        // Resume all downloads for this game
         _downloadService.ResumeAllDownloads();
+        
+        // Track pause state for this game
+        _pauseStateByGame[gameId] = false;
         IsPaused = false;
-        StatusMessage = "Download resumed";
+        StatusMessage = $"Download resumed for {SelectedGame.DisplayName}";
     }
 
     [RelayCommand]
@@ -1058,6 +1081,16 @@ public partial class MainWindowViewModel : ViewModelBase
                     // Reset progress display if the selected game is not downloading
                     ProgressPercent = 0;
                     ProgressText = string.Empty;
+                }
+                
+                // Restore pause state for this game
+                if (value.IsDownloading && _pauseStateByGame.TryGetValue(value.Id, out var isPaused))
+                {
+                    IsPaused = isPaused;
+                }
+                else
+                {
+                    IsPaused = false;
                 }
             }
         }
