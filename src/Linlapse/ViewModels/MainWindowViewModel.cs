@@ -182,7 +182,9 @@ public partial class MainWindowViewModel : ViewModelBase
         _launcherService.GameStarted += (_, game) => OnGameStarted(game);
         _launcherService.GameStopped += (_, game) => OnGameStopped(game);
 
-        _downloadService.DownloadProgressChanged += OnDownloadProgress;
+        // Note: We don't subscribe to _downloadService.DownloadProgressChanged because game downloads
+        // use Progress<GameDownloadProgress> callbacks which provide per-game progress tracking.
+        // Subscribing to the global event would cause progress bar glitching when multiple downloads are active.
         _installationService.InstallProgressChanged += OnInstallProgress;
         _repairService.RepairProgressChanged += OnRepairProgress;
         _updateService.UpdateProgressChanged += OnUpdateProgress;
@@ -366,13 +368,6 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsGameRunning = false;
         }
-    }
-
-    private void OnDownloadProgress(object? sender, DownloadProgress progress)
-    {
-        ProgressPercent = progress.PercentComplete;
-        var speedMb = progress.SpeedBytesPerSecond / 1024 / 1024;
-        ProgressText = $"Downloading: {progress.PercentComplete:F1}% ({speedMb:F1} MB/s)";
     }
 
     private void OnInstallProgress(object? sender, InstallProgress progress)
