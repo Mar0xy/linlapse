@@ -152,8 +152,7 @@ public class GameDownloadService : IDisposable
                 var segment = segments[i];
                 downloadProgress.CurrentFile = $"Part {i + 1} of {segments.Count}";
                 
-                // Use consistent naming for resume support, but preserve the correct extension
-                // We use generic naming because URLs may change between sessions (CDN tokens etc.)
+                // Extract original filename from URL to preserve proper naming for split archive extraction
                 var uri = new Uri(segment.DownloadUrl);
                 var originalFileName = Path.GetFileName(uri.AbsolutePath);
                 if (string.IsNullOrEmpty(originalFileName))
