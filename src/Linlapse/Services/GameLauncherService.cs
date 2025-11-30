@@ -273,9 +273,15 @@ public class GameLauncherService
         }
 
         // Determine wine prefix - use per-game prefix by default
-        var winePrefix = gameSettings?.UseCustomWinePrefix == true
-            ? gameSettings.CustomWinePrefixPath
-            : GetGameWinePrefixPath(game);
+        string? winePrefix;
+        if (gameSettings?.UseCustomWinePrefix == true && !string.IsNullOrEmpty(gameSettings.CustomWinePrefixPath))
+        {
+            winePrefix = gameSettings.CustomWinePrefixPath;
+        }
+        else
+        {
+            winePrefix = GetGameWinePrefixPath(game);
+        }
 
         // Ensure wine prefix directory exists
         if (!string.IsNullOrEmpty(winePrefix))

@@ -121,17 +121,19 @@ public partial class GameSettingsViewModel : ViewModelBase
             }
         }
         
-        // Set selected runners based on current paths
+        // Set selected runners based on current paths - use StartsWith for accurate path matching
         if (!string.IsNullOrEmpty(CustomWineExecutablePath))
         {
             SelectedWineRunner = InstalledWineRunners.FirstOrDefault(r => 
-                CustomWineExecutablePath.Contains(r.InstallPath, StringComparison.OrdinalIgnoreCase));
+                CustomWineExecutablePath.StartsWith(r.InstallPath, StringComparison.OrdinalIgnoreCase) ||
+                r.ExecutablePath.Equals(CustomWineExecutablePath, StringComparison.OrdinalIgnoreCase));
         }
         
         if (!string.IsNullOrEmpty(CustomProtonPath))
         {
             SelectedProtonRunner = InstalledProtonRunners.FirstOrDefault(r => 
-                CustomProtonPath.Contains(r.InstallPath, StringComparison.OrdinalIgnoreCase));
+                CustomProtonPath.StartsWith(r.InstallPath, StringComparison.OrdinalIgnoreCase) ||
+                r.InstallPath.Equals(CustomProtonPath, StringComparison.OrdinalIgnoreCase));
         }
     }
     

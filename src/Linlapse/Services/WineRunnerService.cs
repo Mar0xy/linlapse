@@ -14,9 +14,21 @@ public class WineRunnerService
     private readonly SettingsService _settingsService;
     private readonly DownloadService _downloadService;
     private readonly string _runnersDirectory;
+    
+    // Use a single shared HttpClient for all downloads to avoid socket exhaustion
+    private static readonly HttpClient SharedHttpClient = new()
+    {
+        Timeout = TimeSpan.FromMinutes(30)
+    };
+    
+    // Progress constants for clarity
+    private const double DownloadProgressMax = 50.0;
+    private const double ExtractionProgressStart = 50.0;
+    private const double ExtractionProgressMax = 100.0;
 
     /// <summary>
-    /// Predefined list of popular wine/proton runners available for download
+    /// Predefined list of popular wine/proton runners available for download.
+    /// Note: Versions are pinned for stability. Check GitHub releases for newer versions.
     /// </summary>
     private static readonly List<WineRunner> AvailableRunners = new()
     {
@@ -152,12 +164,11 @@ public class WineRunnerService
             var fileName = Path.GetFileName(new Uri(runner.DownloadUrl).AbsolutePath);
             var downloadPath = Path.Combine(_runnersDirectory, fileName);
 
-            // Download the runner archive
-            using var httpClient = new HttpClient();
-            httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
-            httpClient.Timeout = TimeSpan.FromMinutes(30);
+            // Download the runner archive using the shared HttpClient
+            using var request = new HttpRequestMessage(HttpMethod.Get, runner.DownloadUrl);
+            request.Headers.Add("User-Agent", "Linlapse/1.0");
 
-            using var response = await httpClient.GetAsync(runner.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await SharedHttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var totalBytes = response.Content.Headers.ContentLength ?? runner.Size;
@@ -174,7 +185,7 @@ public class WineRunnerService
                     await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
                     downloadedBytes += bytesRead;
 
-                    var downloadProgress = (double)downloadedBytes / totalBytes * 50; // 50% for download
+                    var downloadProgress = (double)downloadedBytes / totalBytes * DownloadProgressMax;
                     progress?.Report(downloadProgress);
                     DownloadProgressChanged?.Invoke(this, (runnerId, downloadProgress));
                 }
@@ -238,6 +249,8 @@ public class WineRunnerService
     {
         await Task.Run(() =>
         {
+            Exception? sharpCompressException = null;
+            
             try
             {
                 using var archive = ArchiveFactory.Open(archivePath);
@@ -263,16 +276,27 @@ public class WineRunnerService
                     });
 
                     processedEntries++;
-                    var extractProgress = 50 + (double)processedEntries / totalEntries * 50; // 50-100% for extraction
+                    var extractProgress = ExtractionProgressStart + (double)processedEntries / totalEntries * (ExtractionProgressMax - ExtractionProgressStart);
                     progress?.Report(extractProgress);
                 }
             }
             catch (Exception ex)
             {
+                sharpCompressException = ex;
                 Log.Warning(ex, "SharpCompress extraction failed, trying system tar");
                 
-                // Fallback to system tar for .tar.xz, .tar.gz, .tar.zst files
-                ExtractWithSystemTar(archivePath, destDir);
+                try
+                {
+                    // Fallback to system tar for .tar.xz, .tar.gz, .tar.zst files
+                    ExtractWithSystemTar(archivePath, destDir);
+                }
+                catch (Exception tarEx)
+                {
+                    // Include both exceptions for debugging
+                    throw new AggregateException(
+                        $"Failed to extract archive. SharpCompress error: {sharpCompressException.Message}. System tar error: {tarEx.Message}",
+                        sharpCompressException, tarEx);
+                }
             }
         }, cancellationToken);
     }

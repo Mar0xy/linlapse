@@ -41,14 +41,18 @@ public partial class WineRunnerDialogViewModel : ViewModelBase
         LoadRunners();
     }
     
+    // Progress thresholds matching WineRunnerService constants
+    private const double DownloadProgressMax = 50.0;
+    private const double ExtractionProgressStart = 50.0;
+    
     private void OnDownloadProgressChanged(object? sender, (string RunnerId, double Progress) e)
     {
         if (SelectedRunner?.Id == e.RunnerId)
         {
             DownloadProgress = e.Progress;
-            StatusMessage = e.Progress < 50 
+            StatusMessage = e.Progress < DownloadProgressMax 
                 ? $"Downloading: {e.Progress:F1}%" 
-                : $"Extracting: {(e.Progress - 50) * 2:F1}%";
+                : $"Extracting: {(e.Progress - ExtractionProgressStart) * 2:F1}%";
         }
     }
     
