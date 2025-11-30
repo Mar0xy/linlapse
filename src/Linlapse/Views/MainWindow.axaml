@@ -381,19 +381,6 @@
                                     </StackPanel>
                                 </Border>
 
-                                <!-- Region Selector -->
-                                <Border Background="#27272aDD" CornerRadius="8" Padding="16,12">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Text="Region" FontSize="12" FontWeight="SemiBold" Foreground="White"/>
-                                        <ComboBox ItemsSource="{Binding AvailableRegions}"
-                                                  SelectedItem="{Binding SelectedRegion}"
-                                                  HorizontalAlignment="Stretch"
-                                                  Background="#3f3f46"
-                                                  Foreground="White"
-                                                  BorderBrush="#52525b"/>
-                                    </StackPanel>
-                                </Border>
-
                                 <!-- Cache Info -->
                                 <Border Background="#27272aDD" 
                                         CornerRadius="8" 

@@ -128,10 +128,6 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _isDownloadingJadeite;
-
-    // Region selection per game type
-    [ObservableProperty]
-    private GameRegion _selectedRegion = GameRegion.Global;
     
     // Game Settings Dialog
     [ObservableProperty]
@@ -147,13 +143,6 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private WineRunnerDialogViewModel? _wineRunnerDialogViewModel;
 
-    // Available regions for dropdown
-    public ObservableCollection<GameRegion> AvailableRegions { get; } = new()
-    {
-        GameRegion.Global,
-        GameRegion.China
-    };
-
     // Voice language options for settings
     public ObservableCollection<VoiceLanguageOption> VoiceLanguageOptions { get; } = new()
     {
@@ -163,7 +152,7 @@ public partial class MainWindowViewModel : ViewModelBase
         new VoiceLanguageOption { Code = "ko-kr", DisplayName = "Korean" }
     };
 
-    // Filtered games based on selected region (one per game type)
+    // Games collection based on per-game region preferences
     public ObservableCollection<GameInfo> Games { get; } = new();
 
     public string AppVersion => "1.0.0";
@@ -276,13 +265,21 @@ public partial class MainWindowViewModel : ViewModelBase
 
         Games.Clear();
         
-        // Group games by type and show only the ones for the selected region
+        // Get saved region preferences per game type
+        var settings = _settingsService.Settings;
         var gameTypes = new[] { GameType.HonkaiImpact3rd, GameType.GenshinImpact, GameType.HonkaiStarRail, GameType.ZenlessZoneZero };
         
         foreach (var gameType in gameTypes)
         {
-            // Try to find the game for the selected region, fall back to any available
-            var game = _gameService.GetGameByTypeAndRegion(gameType, SelectedRegion);
+            // Use the saved region preference for this game type, default to Global
+            GameRegion regionToUse = GameRegion.Global;
+            if (settings.SelectedRegionPerGame.TryGetValue(gameType.ToString(), out var savedRegion) &&
+                Enum.TryParse<GameRegion>(savedRegion, out var parsedRegion))
+            {
+                regionToUse = parsedRegion;
+            }
+            
+            var game = _gameService.GetGameByTypeAndRegion(gameType, regionToUse);
             if (game != null)
             {
                 Games.Add(game);
@@ -325,21 +322,6 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             Log.Warning(ex, "Failed to load icon for {GameId}", game.Id);
         }
-    }
-
-    partial void OnSelectedRegionChanged(GameRegion value)
-    {
-        // Save the selected region to settings
-        if (SelectedGame != null)
-        {
-            _settingsService.UpdateSettings(settings =>
-            {
-                settings.SelectedRegionPerGame[SelectedGame.GameType.ToString()] = value.ToString();
-            });
-        }
-        
-        // Refresh games list with new region
-        RefreshGamesCollection();
     }
 
     private void UpdateGameInCollection(GameInfo updatedGame)
@@ -1384,12 +1366,79 @@ public partial class MainWindowViewModel : ViewModelBase
         StatusMessage = $"Configuring settings for {targetGame.DisplayName}";
     }
     
-    private void OnGameSettingsSaved(object? sender, EventArgs e)
+    private void OnGameSettingsSaved(object? sender, GameSettingsSavedEventArgs e)
     {
         StatusMessage = "Game settings saved successfully";
         
-        // Refresh the games collection if region changed
-        RefreshGamesCollection();
+        // Switch to the game variant for the selected region
+        var newGame = _gameService.GetGameByTypeAndRegion(e.GameType, e.SelectedRegion);
+        if (newGame != null)
+        {
+            // Refresh games collection and select the new game variant
+            RefreshGamesCollectionForRegion(e.GameType, e.SelectedRegion);
+            
+            // Load the background for the new game
+            _ = LoadBackgroundAsync(newGame.Id);
+        }
+        
+        // Close the settings dialog
+        CloseGameSettings();
+    }
+    
+    /// <summary>
+    /// Refresh games collection and select a specific game by type and region
+    /// </summary>
+    private void RefreshGamesCollectionForRegion(GameType gameType, GameRegion region)
+    {
+        Games.Clear();
+        
+        // Get saved region preferences for each game type
+        var settings = _settingsService.Settings;
+        var gameTypes = new[] { GameType.HonkaiImpact3rd, GameType.GenshinImpact, GameType.HonkaiStarRail, GameType.ZenlessZoneZero };
+        
+        GameInfo? gameToSelect = null;
+        
+        foreach (var gt in gameTypes)
+        {
+            // For the changed game type, use the new region; for others, use saved preferences
+            GameRegion regionToUse;
+            if (gt == gameType)
+            {
+                regionToUse = region;
+            }
+            else if (settings.SelectedRegionPerGame.TryGetValue(gt.ToString(), out var savedRegion) &&
+                     Enum.TryParse<GameRegion>(savedRegion, out var parsedRegion))
+            {
+                regionToUse = parsedRegion;
+            }
+            else
+            {
+                regionToUse = GameRegion.Global;
+            }
+            
+            var game = _gameService.GetGameByTypeAndRegion(gt, regionToUse);
+            if (game != null)
+            {
+                Games.Add(game);
+                _ = LoadGameIconAsync(game);
+                
+                // Track the game we want to select
+                if (gt == gameType)
+                {
+                    gameToSelect = game;
+                }
+            }
+        }
+        
+        // Select the game for the changed type
+        if (gameToSelect != null)
+        {
+            SelectedGame = gameToSelect;
+        }
+        else if (Games.Count > 0)
+        {
+            SelectedGame = Games[0];
+        }
     }
     
     private void OnGameSettingsClosed(object? sender, EventArgs e)

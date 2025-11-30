@@ -58,8 +58,21 @@ public partial class GameSettingsViewModel : ViewModelBase
     public ObservableCollection<InstalledRunner> InstalledWineRunners { get; } = new();
     public ObservableCollection<InstalledRunner> InstalledProtonRunners { get; } = new();
     
-    public event EventHandler? SettingsSaved;
+    /// <summary>
+    /// Event fired when settings are saved, includes the selected region
+    /// </summary>
+    public event EventHandler<GameSettingsSavedEventArgs>? SettingsSaved;
     public event EventHandler? SettingsClosed;
+    
+    /// <summary>
+    /// The game type being configured
+    /// </summary>
+    public GameType GameType => _game.GameType;
+    
+    /// <summary>
+    /// The original region of the game before any changes
+    /// </summary>
+    public GameRegion OriginalRegion => _game.Region;
     
     public GameSettingsViewModel(GameInfo game, SettingsService settingsService, WineRunnerService runnerService)
     {
@@ -178,8 +191,8 @@ public partial class GameSettingsViewModel : ViewModelBase
             settings.SelectedRegionPerGame[_game.GameType.ToString()] = SelectedRegion.ToString();
         });
         
-        Log.Information("Game settings saved for {Game}", _game.DisplayName);
-        SettingsSaved?.Invoke(this, EventArgs.Empty);
+        Log.Information("Game settings saved for {Game} with region {Region}", _game.DisplayName, SelectedRegion);
+        SettingsSaved?.Invoke(this, new GameSettingsSavedEventArgs(GameType, SelectedRegion));
     }
     
     [RelayCommand]
@@ -202,5 +215,20 @@ public partial class GameSettingsViewModel : ViewModelBase
         CustomLaunchArgs = null;
         SelectedWineRunner = null;
         SelectedProtonRunner = null;
+    }
+}
+
+/// <summary>
+/// Event arguments for when game settings are saved
+/// </summary>
+public class GameSettingsSavedEventArgs : EventArgs
+{
+    public GameType GameType { get; }
+    public GameRegion SelectedRegion { get; }
+    
+    public GameSettingsSavedEventArgs(GameType gameType, GameRegion selectedRegion)
+    {
+        GameType = gameType;
+        SelectedRegion = selectedRegion;
     }
 }
