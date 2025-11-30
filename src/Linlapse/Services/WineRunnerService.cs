@@ -35,44 +35,34 @@ public class WineRunnerService
         // Wine runners
         new WineRunner
         {
-            Id = "wine-ge-proton-latest",
-            Name = "Wine-GE-Proton",
-            Version = "9-25",
-            Description = "Custom Wine build with patches for gaming, includes DXVK and VKD3D",
+            Id = "wine-spritz",
+            Name = "Spritz Wine",
+            Version = "10.15",
+            Description = "Wine with additional patches",
             Type = WineRunnerType.Wine,
-            DownloadUrl = "https://github.com/GloriousEggroll/wine-ge-custom/releases/download/GE-Proton9-25/wine-lutris-GE-Proton9-25-x86_64.tar.xz",
-            Size = 450_000_000
-        },
-        new WineRunner
-        {
-            Id = "wine-staging",
-            Name = "Wine Staging",
-            Version = "9.0",
-            Description = "Wine with additional patches that haven't made it upstream yet",
-            Type = WineRunnerType.Wine,
-            DownloadUrl = "https://github.com/Kron4ek/Wine-Builds/releases/download/9.21/wine-9.21-staging-tkg-amd64.tar.xz",
+            DownloadUrl = "https://github.com/NelloKudo/Wine-Builds/releases/download/wine-tkg-aagl-v10.15-7/spritz-wine-tkg-staging-wow64-10.15-7-x86_64.tar.xz",
             Size = 300_000_000
         },
         // Proton runners
         new WineRunner
         {
-            Id = "proton-ge-latest",
-            Name = "GE-Proton",
-            Version = "9-25",
-            Description = "Custom Proton build by GloriousEggroll with extra game fixes and features",
-            Type = WineRunnerType.Proton,
-            DownloadUrl = "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton9-25/GE-Proton9-25.tar.gz",
-            Size = 500_000_000
-        },
-        new WineRunner
-        {
             Id = "proton-cachyos",
             Name = "CachyOS Proton",
-            Version = "9.0-4",
+            Version = "10.0-20251126",
             Description = "CachyOS optimized Proton build with performance improvements",
             Type = WineRunnerType.Proton,
-            DownloadUrl = "https://github.com/CachyOS/proton-cachyos/releases/download/proton-cachyos-9.0-4/proton-cachyos-9.0-4.tar.zst",
-            Size = 520_000_000
+            DownloadUrl = "https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-10.0-20251126-slr/proton-cachyos-10.0-20251126-slr-x86_64.tar.xz",
+            Size = 289_000_000
+        }
+        new WineRunner
+        {
+            Id = "proton-dw",
+            Name = "dwproton",
+            Version = "10.0-8",
+            Description = "Special proton made by dawn winery",
+            Type = WineRunnerType.Proton,
+            DownloadUrl = "https://dawn.wine/dawn-winery/dwproton/releases/download/dwproton-10.0-8/dwproton-10.0-8-x86_64.tar.xz",
+            Size = 289_000_000
         }
     };
 
