@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Linlapse.Models;
 using Serilog;
 
@@ -8,13 +9,17 @@ namespace Linlapse.Services;
 /// <summary>
 /// Service for downloading and installing games from official sources
 /// </summary>
-public class GameDownloadService : IDisposable
+public partial class GameDownloadService : IDisposable
 {
     private readonly HttpClient _httpClient;
     private readonly GameService _gameService;
     private readonly DownloadService _downloadService;
     private readonly InstallationService _installationService;
     private readonly SettingsService _settingsService;
+
+    // Regex for detecting multi-part archive extensions (e.g., .001, .002, .0001, etc.)
+    [GeneratedRegex(@"^\.(\d+)$", RegexOptions.Compiled)]
+    private static partial Regex MultiPartExtensionRegex();
 
     public event EventHandler<GameDownloadInfo>? DownloadInfoRetrieved;
     public event EventHandler<GameDownloadProgress>? DownloadProgressChanged;
@@ -292,27 +297,71 @@ public class GameDownloadService : IDisposable
 
             Directory.CreateDirectory(installPath);
 
+            // Separate multi-part archives from regular archives
+            // Multi-part archives have extensions like .zip.001, .zip.002, etc.
+            var multiPartFirstFiles = new HashSet<string>();
+            var regularArchives = new List<string>();
+
             foreach (var downloadedFile in downloadedFiles)
             {
                 var extension = Path.GetExtension(downloadedFile).ToLowerInvariant();
 
-                if (extension == ".zip" || extension == ".7z")
+                // Check if this is a multi-part archive segment (e.g., .zip.001, .7z.001, .zip.0001)
+                var match = MultiPartExtensionRegex().Match(extension);
+                if (match.Success)
                 {
-                    var installProgress = new Progress<InstallProgress>(ip =>
+                    // This is a split archive part - only extract from the first part (.001 or .000)
+                    // Some archive tools use .000 as the first part, others use .001
+                    if (int.TryParse(match.Groups[1].Value, out var partNum) && partNum <= 1)
                     {
-                        downloadProgress.ExtractedFiles = ip.ProcessedFiles;
-                        downloadProgress.TotalFiles = ip.TotalFiles;
-                        downloadProgress.CurrentFile = ip.CurrentFile;
-                        progress?.Report(downloadProgress);
-                    });
-
-                    await _installationService.InstallFromArchiveAsync(
-                        gameId,
-                        downloadedFile,
-                        installPath,
-                        installProgress,
-                        cancellationToken);
+                        multiPartFirstFiles.Add(downloadedFile);
+                    }
+                    // Skip other parts (.002, .003, etc.) - 7z will find them automatically
                 }
+                else if (extension == ".zip" || extension == ".7z")
+                {
+                    regularArchives.Add(downloadedFile);
+                }
+            }
+
+            // Extract multi-part archives (from their first segment)
+            foreach (var firstPart in multiPartFirstFiles)
+            {
+                Log.Information("Extracting multi-part archive starting from: {File}", Path.GetFileName(firstPart));;
+                
+                var installProgress = new Progress<InstallProgress>(ip =>
+                {
+                    downloadProgress.ExtractedFiles = ip.ProcessedFiles;
+                    downloadProgress.TotalFiles = ip.TotalFiles;
+                    downloadProgress.CurrentFile = ip.CurrentFile;
+                    progress?.Report(downloadProgress);
+                });
+
+                await _installationService.InstallFromArchiveAsync(
+                    gameId,
+                    firstPart,
+                    installPath,
+                    installProgress,
+                    cancellationToken);
+            }
+
+            // Extract regular single-file archives
+            foreach (var archiveFile in regularArchives)
+            {
+                var installProgress = new Progress<InstallProgress>(ip =>
+                {
+                    downloadProgress.ExtractedFiles = ip.ProcessedFiles;
+                    downloadProgress.TotalFiles = ip.TotalFiles;
+                    downloadProgress.CurrentFile = ip.CurrentFile;
+                    progress?.Report(downloadProgress);
+                });
+
+                await _installationService.InstallFromArchiveAsync(
+                    gameId,
+                    archiveFile,
+                    installPath,
+                    installProgress,
+                    cancellationToken);
             }
 
             // Update game info - UpdateGameInstallPath will set the state based on whether
