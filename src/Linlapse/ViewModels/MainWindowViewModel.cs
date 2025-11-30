@@ -20,6 +20,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly GameSettingsService _gameSettingsService;
     private readonly GameDownloadService _gameDownloadService;
     private readonly BackgroundService _backgroundService;
+    private readonly WineRunnerService _wineRunnerService;
 
     // Dictionary to track cancellation tokens for each downloading game
     private readonly Dictionary<string, CancellationTokenSource> _downloadCancellationTokens = new();
@@ -131,6 +132,20 @@ public partial class MainWindowViewModel : ViewModelBase
     // Region selection per game type
     [ObservableProperty]
     private GameRegion _selectedRegion = GameRegion.Global;
+    
+    // Game Settings Dialog
+    [ObservableProperty]
+    private bool _isGameSettingsVisible;
+    
+    [ObservableProperty]
+    private GameSettingsViewModel? _gameSettingsViewModel;
+    
+    // Wine Runner Dialog
+    [ObservableProperty]
+    private bool _isWineRunnerDialogVisible;
+    
+    [ObservableProperty]
+    private WineRunnerDialogViewModel? _wineRunnerDialogViewModel;
 
     // Available regions for dropdown
     public ObservableCollection<GameRegion> AvailableRegions { get; } = new()
@@ -177,6 +192,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _launcherService = new GameLauncherService(_settingsService, _gameService);
         _gameDownloadService = new GameDownloadService(_gameService, _downloadService, _installationService, _settingsService);
         _backgroundService = new BackgroundService(_gameService, _settingsService);
+        _wineRunnerService = new WineRunnerService(_settingsService, _downloadService);
 
         // Subscribe to events
         _gameService.GamesListChanged += (_, _) => RefreshGamesCollection();
@@ -1349,4 +1365,95 @@ public partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public bool SelectedGameRequiresJadeite =>
         SelectedGame != null && GameLauncherService.RequiresJadeite(SelectedGame.GameType);
+
+    /// <summary>
+    /// Open game settings dialog for a specific game or the currently selected game
+    /// </summary>
+    [RelayCommand]
+    private void OpenGameSettings(GameInfo? game)
+    {
+        var targetGame = game ?? SelectedGame;
+        if (targetGame == null) return;
+        
+        // Create the game settings view model
+        GameSettingsViewModel = new GameSettingsViewModel(targetGame, _settingsService, _wineRunnerService);
+        GameSettingsViewModel.SettingsSaved += OnGameSettingsSaved;
+        GameSettingsViewModel.SettingsClosed += OnGameSettingsClosed;
+        
+        IsGameSettingsVisible = true;
+        StatusMessage = $"Configuring settings for {targetGame.DisplayName}";
+    }
+    
+    private void OnGameSettingsSaved(object? sender, EventArgs e)
+    {
+        StatusMessage = "Game settings saved successfully";
+        
+        // Refresh the games collection if region changed
+        RefreshGamesCollection();
+    }
+    
+    private void OnGameSettingsClosed(object? sender, EventArgs e)
+    {
+        CloseGameSettings();
+    }
+    
+    [RelayCommand]
+    private void CloseGameSettings()
+    {
+        if (GameSettingsViewModel != null)
+        {
+            GameSettingsViewModel.SettingsSaved -= OnGameSettingsSaved;
+            GameSettingsViewModel.SettingsClosed -= OnGameSettingsClosed;
+            GameSettingsViewModel = null;
+        }
+        IsGameSettingsVisible = false;
+    }
+    
+    /// <summary>
+    /// Open the wine runner download dialog
+    /// </summary>
+    [RelayCommand]
+    private void OpenWineRunnerDialog()
+    {
+        // Create the wine runner dialog view model
+        WineRunnerDialogViewModel = new WineRunnerDialogViewModel(_wineRunnerService);
+        WineRunnerDialogViewModel.DialogClosed += OnWineRunnerDialogClosed;
+        WineRunnerDialogViewModel.RunnersUpdated += OnRunnersUpdated;
+        
+        IsWineRunnerDialogVisible = true;
+        StatusMessage = "Download custom Wine/Proton runners";
+    }
+    
+    private void OnWineRunnerDialogClosed(object? sender, EventArgs e)
+    {
+        CloseWineRunnerDialog();
+    }
+    
+    private void OnRunnersUpdated(object? sender, EventArgs e)
+    {
+        // Re-check wine version when runners are updated
+        _ = UpdateWineInfoAsync();
+    }
+    
+    private async Task UpdateWineInfoAsync()
+    {
+        var wineInfo = await _launcherService.GetWineInfoAsync();
+        if (wineInfo.IsInstalled)
+        {
+            WineVersion = wineInfo.IsProton ? $"Proton: {wineInfo.Version.Trim()}" : $"Wine: {wineInfo.Version.Trim()}";
+        }
+    }
+    
+    [RelayCommand]
+    private void CloseWineRunnerDialog()
+    {
+        if (WineRunnerDialogViewModel != null)
+        {
+            WineRunnerDialogViewModel.DialogClosed -= OnWineRunnerDialogClosed;
+            WineRunnerDialogViewModel.RunnersUpdated -= OnRunnersUpdated;
+            WineRunnerDialogViewModel.Cleanup();
+            WineRunnerDialogViewModel = null;
+        }
+        IsWineRunnerDialogVisible = false;
+    }
 }
