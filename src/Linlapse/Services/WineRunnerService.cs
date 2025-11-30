@@ -53,7 +53,7 @@ public class WineRunnerService
             Type = WineRunnerType.Proton,
             DownloadUrl = "https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-10.0-20251126-slr/proton-cachyos-10.0-20251126-slr-x86_64.tar.xz",
             Size = 289_000_000
-        }
+        },
         new WineRunner
         {
             Id = "proton-dw",
