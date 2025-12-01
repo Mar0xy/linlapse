@@ -47,6 +47,26 @@ jobs:
           -p:IncludeNativeLibrariesForSelfExtract=true \
           -o ./publish/linux-x64
 
+    - name: Create launcher script
+      run: |
+        # Create a wrapper script that sets LD_LIBRARY_PATH to find bundled native libraries
+        cat > ./publish/linux-x64/linlapse << 'EOF'
+        #!/bin/bash
+        # Wrapper script for Linlapse that sets up the environment for bundled native libraries
+        
+        # Get the directory where this script is located
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        
+        # Add the native library directories to LD_LIBRARY_PATH
+        # Hi3Helper.ZstdNet puts libzstd.so in Lib/linux-x64/
+        export LD_LIBRARY_PATH="${SCRIPT_DIR}/Lib/linux-x64:${SCRIPT_DIR}:${LD_LIBRARY_PATH}"
+        
+        # Run the actual executable
+        exec "${SCRIPT_DIR}/Linlapse" "$@"
+        EOF
+        chmod +x ./publish/linux-x64/linlapse
+        echo "Created launcher script"
+
     - name: Set executable permissions
       run: chmod +x ./publish/linux-x64/Linlapse
 
