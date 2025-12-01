@@ -158,6 +158,10 @@
                                                 </MenuItem.Header>
                                             </MenuItem>
                                             <Separator/>
+                                            <MenuItem Header="⚙ Game Settings" 
+                                                      Command="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).OpenGameSettingsCommand}"
+                                                      CommandParameter="{Binding}"/>
+                                            <Separator/>
                                             <MenuItem Header="🗑 Uninstall" 
                                                       Command="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).UninstallGameCommand}"
                                                       CommandParameter="{Binding}"
@@ -172,7 +176,7 @@
                                         <Image Source="{Binding LogoImagePath, Converter={StaticResource FilePathToBitmapConverter}}"
                                                Stretch="UniformToFill"
                                                IsVisible="{Binding LogoImagePath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                        <TextBlock Text="🎯" 
+                                        <TextBlock Text="🎯"
                                                    VerticalAlignment="Center"
                                                    HorizontalAlignment="Center"
                                                    FontSize="20"
@@ -232,6 +236,7 @@
                     </Button>
                     <Button Classes="icon-button"
                             Width="48" Height="48"
+                            Command="{Binding OpenWineRunnerDialogCommand}"
                             ToolTip.Tip="{Binding WineVersion}">
                         <TextBlock Text="🍷" FontSize="22" HorizontalAlignment="Center"/>
                     </Button>
@@ -373,19 +378,6 @@
                                             <Run Text="Voice packs available: "/>
                                             <Run Text="{Binding DownloadInfo.VoicePacks.Count}" Foreground="#93c5fd"/>
                                         </TextBlock>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- Region Selector -->
-                                <Border Background="#27272aDD" CornerRadius="8" Padding="16,12">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Text="Region" FontSize="12" FontWeight="SemiBold" Foreground="White"/>
-                                        <ComboBox ItemsSource="{Binding AvailableRegions}"
-                                                  SelectedItem="{Binding SelectedRegion}"
-                                                  HorizontalAlignment="Stretch"
-                                                  Background="#3f3f46"
-                                                  Foreground="White"
-                                                  BorderBrush="#52525b"/>
                                     </StackPanel>
                                 </Border>
 
@@ -539,6 +531,16 @@
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="📥"/>
                                     <TextBlock Text="Preload"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <!-- Game Settings Button -->
+                            <Button Classes="secondary"
+                                    Command="{Binding OpenGameSettingsCommand}"
+                                    CommandParameter="{Binding SelectedGame}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="⚙"/>
+                                    <TextBlock Text="Game Settings"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -770,6 +772,369 @@
                                     Classes="primary"
                                     Command="{Binding SaveSettingsCommand}"/>
                         </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Game Settings Dialog (overlay) -->
+            <Border Grid.Row="0"
+                    IsVisible="{Binding IsGameSettingsVisible}"
+                    Background="#1a1a2e"
+                    Margin="24"
+                    CornerRadius="16"
+                    Padding="32"
+                    ZIndex="10">
+                <ScrollViewer>
+                    <StackPanel Spacing="24" DataContext="{Binding GameSettingsViewModel}">
+                        <!-- Header -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Text="⚙ Game Settings" 
+                                           FontSize="28" 
+                                           FontWeight="Bold" 
+                                           Foreground="White"/>
+                                <TextBlock Text="{Binding GameName}" 
+                                           FontSize="14" 
+                                           Foreground="#a1a1aa"
+                                           Margin="0,4,0,0"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" 
+                                    Content="✕ Close" 
+                                    Classes="secondary"
+                                    Command="{Binding CloseCommand}"/>
+                        </Grid>
+
+                        <!-- Region Selection -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Region" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                <TextBlock Text="Select the game server region:" 
+                                           Foreground="#a1a1aa" 
+                                           FontSize="12"/>
+                                <ComboBox ItemsSource="{Binding AvailableRegions}"
+                                          SelectedItem="{Binding SelectedRegion}"
+                                          HorizontalAlignment="Stretch"
+                                          Background="#3f3f46"
+                                          Foreground="White"
+                                          BorderBrush="#52525b"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Wine/Proton Runner Selection -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Wine/Proton Runner" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                <TextBlock Text="Configure custom Wine or Proton runner for this game:" 
+                                           Foreground="#a1a1aa" 
+                                           FontSize="12"
+                                           TextWrapping="Wrap"/>
+                                
+                                <CheckBox IsChecked="{Binding UseCustomRunner}"
+                                          Foreground="White">
+                                    <TextBlock Text="Use custom runner for this game" Foreground="White"/>
+                                </CheckBox>
+                                
+                                <StackPanel Spacing="12" IsEnabled="{Binding UseCustomRunner}">
+                                    <CheckBox IsChecked="{Binding UseProton}"
+                                              Foreground="White">
+                                        <TextBlock Text="Use Proton instead of Wine" Foreground="White"/>
+                                    </CheckBox>
+                                    
+                                    <!-- Wine Runner Dropdown -->
+                                    <StackPanel Spacing="4" IsVisible="{Binding !UseProton}">
+                                        <TextBlock Text="Select Wine Runner:" 
+                                                   Foreground="#a1a1aa" 
+                                                   FontSize="12"/>
+                                        <ComboBox ItemsSource="{Binding InstalledWineRunners}"
+                                                  SelectedItem="{Binding SelectedWineRunner}"
+                                                  HorizontalAlignment="Stretch"
+                                                  Background="#3f3f46"
+                                                  Foreground="White"
+                                                  BorderBrush="#52525b"
+                                                  Padding="8">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="{Binding Name}" Foreground="White"/>
+                                                        <TextBlock Text="{Binding Version, StringFormat='(v{0})'}" 
+                                                                   Foreground="#71717a" 
+                                                                   FontSize="11"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <TextBlock Text="Or enter custom path:" 
+                                                   Foreground="#71717a" 
+                                                   FontSize="11"
+                                                   Margin="0,8,0,0"/>
+                                        <TextBox Text="{Binding CustomWineExecutablePath}"
+                                                 Watermark="e.g., /path/to/wine64"
+                                                 Background="#3f3f46"
+                                                 Foreground="White"
+                                                 BorderBrush="#52525b"
+                                                 Padding="12,8"/>
+                                    </StackPanel>
+                                    
+                                    <!-- Proton Runner Dropdown -->
+                                    <StackPanel Spacing="4" IsVisible="{Binding UseProton}">
+                                        <TextBlock Text="Select Proton Runner:" 
+                                                   Foreground="#a1a1aa" 
+                                                   FontSize="12"/>
+                                        <ComboBox ItemsSource="{Binding InstalledProtonRunners}"
+                                                  SelectedItem="{Binding SelectedProtonRunner}"
+                                                  HorizontalAlignment="Stretch"
+                                                  Background="#3f3f46"
+                                                  Foreground="White"
+                                                  BorderBrush="#52525b"
+                                                  Padding="8">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="{Binding Name}" Foreground="White"/>
+                                                        <TextBlock Text="{Binding Version, StringFormat='(v{0})'}" 
+                                                                   Foreground="#71717a" 
+                                                                   FontSize="11"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <TextBlock Text="Or enter custom path:" 
+                                                   Foreground="#71717a" 
+                                                   FontSize="11"
+                                                   Margin="0,8,0,0"/>
+                                        <TextBox Text="{Binding CustomProtonPath}"
+                                                 Watermark="e.g., /path/to/proton-ge"
+                                                 Background="#3f3f46"
+                                                 Foreground="White"
+                                                 BorderBrush="#52525b"
+                                                 Padding="12,8"/>
+                                    </StackPanel>
+                                    
+                                    <TextBlock Text="💡 Download runners via the wine bottle button or install them to Steam's compatibilitytools.d folder."
+                                               Foreground="#71717a"
+                                               FontSize="11"
+                                               TextWrapping="Wrap"
+                                               Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Wine Prefix -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Wine Prefix" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                
+                                <CheckBox IsChecked="{Binding UseCustomWinePrefix}"
+                                          Foreground="White">
+                                    <TextBlock Text="Use custom Wine prefix for this game" Foreground="White"/>
+                                </CheckBox>
+                                
+                                <TextBox Text="{Binding CustomWinePrefixPath}"
+                                         Watermark="e.g., ~/.wine-genshin"
+                                         IsEnabled="{Binding UseCustomWinePrefix}"
+                                         Background="#3f3f46"
+                                         Foreground="White"
+                                         BorderBrush="#52525b"
+                                         Padding="12,8"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Launch Arguments -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Launch Arguments" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                <TextBlock Text="Additional command line arguments to pass to the game:" 
+                                           Foreground="#a1a1aa" 
+                                           FontSize="12"/>
+                                <TextBox Text="{Binding CustomLaunchArgs}"
+                                         Watermark="e.g., -windowed -no-intro"
+                                         Background="#3f3f46"
+                                         Foreground="White"
+                                         BorderBrush="#52525b"
+                                         Padding="12,8"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Action Buttons -->
+                        <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+                            <Button Content="Reset to Global" 
+                                    Classes="secondary"
+                                    Command="{Binding ResetToGlobalSettingsCommand}"/>
+                            <Button Content="Save Settings" 
+                                    Classes="primary"
+                                    Command="{Binding SaveSettingsCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Wine Runner Dialog (overlay) -->
+            <Border Grid.Row="0"
+                    IsVisible="{Binding IsWineRunnerDialogVisible}"
+                    Background="#1a1a2e"
+                    Margin="24"
+                    CornerRadius="16"
+                    Padding="32"
+                    ZIndex="10">
+                <ScrollViewer>
+                    <StackPanel Spacing="24" DataContext="{Binding WineRunnerDialogViewModel}">
+                        <!-- Header -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Text="🍷 Wine/Proton Runners" 
+                                           FontSize="28" 
+                                           FontWeight="Bold" 
+                                           Foreground="White"/>
+                                <TextBlock Text="Download and manage custom Wine and Proton builds" 
+                                           FontSize="14" 
+                                           Foreground="#a1a1aa"
+                                           Margin="0,4,0,0"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" 
+                                    Content="✕ Close" 
+                                    Classes="secondary"
+                                    Command="{Binding CloseCommand}"/>
+                        </Grid>
+
+                        <!-- Status/Progress -->
+                        <Border Background="#27272a" CornerRadius="8" Padding="16,12"
+                                IsVisible="{Binding IsDownloading}">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="{Binding StatusMessage}" Foreground="White"/>
+                                <ProgressBar Value="{Binding DownloadProgress}"
+                                             Maximum="100"
+                                             Height="8"
+                                             CornerRadius="4"
+                                             Background="#3f3f46"
+                                             Foreground="#6366f1"/>
+                                <Button Content="Cancel" 
+                                        Classes="secondary"
+                                        Command="{Binding CancelDownloadCommand}"
+                                        HorizontalAlignment="Right"
+                                        Padding="12,6"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Wine Runners Section -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Wine Runners" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                <TextBlock Text="Custom Wine builds with gaming patches and optimizations" 
+                                           Foreground="#a1a1aa" 
+                                           FontSize="12"/>
+                                
+                                <ItemsControl ItemsSource="{Binding WineRunners}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#3f3f46" CornerRadius="8" Padding="16" Margin="0,4">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <StackPanel Grid.Column="0" Spacing="4">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="White"/>
+                                                            <TextBlock Text="{Binding Version}" Foreground="#a1a1aa"/>
+                                                            <Border Background="#22c55e" CornerRadius="4" Padding="6,2" 
+                                                                    IsVisible="{Binding IsInstalled}">
+                                                                <TextBlock Text="Installed" FontSize="10" Foreground="White"/>
+                                                            </Border>
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Description}" FontSize="11" Foreground="#71717a" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <Button Content="Download" 
+                                                                Classes="primary"
+                                                                Command="{Binding $parent[ItemsControl].((vm:WineRunnerDialogViewModel)DataContext).DownloadRunnerCommand}"
+                                                                CommandParameter="{Binding}"
+                                                                IsVisible="{Binding !IsInstalled}"
+                                                                Padding="12,6"/>
+                                                        <Button Content="Uninstall" 
+                                                                Classes="danger"
+                                                                Command="{Binding $parent[ItemsControl].((vm:WineRunnerDialogViewModel)DataContext).UninstallRunnerCommand}"
+                                                                CommandParameter="{Binding}"
+                                                                IsVisible="{Binding IsInstalled}"
+                                                                Padding="12,6"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Proton Runners Section -->
+                        <Border Background="#27272a" CornerRadius="12" Padding="20">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Proton Runners" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                                <TextBlock Text="Valve's compatibility layer with additional gaming features" 
+                                           Foreground="#a1a1aa" 
+                                           FontSize="12"/>
+                                
+                                <ItemsControl ItemsSource="{Binding ProtonRunners}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#3f3f46" CornerRadius="8" Padding="16" Margin="0,4">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <StackPanel Grid.Column="0" Spacing="4">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="White"/>
+                                                            <TextBlock Text="{Binding Version}" Foreground="#a1a1aa"/>
+                                                            <Border Background="#22c55e" CornerRadius="4" Padding="6,2" 
+                                                                    IsVisible="{Binding IsInstalled}">
+                                                                <TextBlock Text="Installed" FontSize="10" Foreground="White"/>
+                                                            </Border>
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Description}" FontSize="11" Foreground="#71717a" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <Button Content="Download" 
+                                                                Classes="primary"
+                                                                Command="{Binding $parent[ItemsControl].((vm:WineRunnerDialogViewModel)DataContext).DownloadRunnerCommand}"
+                                                                CommandParameter="{Binding}"
+                                                                IsVisible="{Binding !IsInstalled}"
+                                                                Padding="12,6"/>
+                                                        <Button Content="Uninstall" 
+                                                                Classes="danger"
+                                                                Command="{Binding $parent[ItemsControl].((vm:WineRunnerDialogViewModel)DataContext).UninstallRunnerCommand}"
+                                                                CommandParameter="{Binding}"
+                                                                IsVisible="{Binding IsInstalled}"
+                                                                Padding="12,6"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Info Note -->
+                        <Border Background="#1e3a5fDD" CornerRadius="8" Padding="16,12">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="💡 Tip" FontWeight="SemiBold" Foreground="#93c5fd"/>
+                                <TextBlock Text="After downloading a runner, you can select it in per-game settings by right-clicking on a game and choosing 'Game Settings'." 
+                                           FontSize="12" 
+                                           Foreground="#a1a1aa"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

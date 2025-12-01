@@ -36,6 +36,11 @@ public class AppSettings
     /// Path to Jadeite executable for launching HSR and HI3 with anti-cheat bypass
     /// </summary>
     public string? JadeiteExecutablePath { get; set; }
+    
+    /// <summary>
+    /// List of installed custom wine/proton runners
+    /// </summary>
+    public List<InstalledRunner> InstalledRunners { get; set; } = new();
 }
 
 /// <summary>
@@ -60,6 +65,31 @@ public class GameSettings
     public Dictionary<string, string> EnvironmentVariables { get; set; } = new();
     public GraphicsSettings? Graphics { get; set; }
     public AudioSettings? Audio { get; set; }
+    
+    /// <summary>
+    /// Whether to use a custom wine/proton runner for this game instead of global settings
+    /// </summary>
+    public bool UseCustomRunner { get; set; } = false;
+    
+    /// <summary>
+    /// Custom wine executable path for this game (overrides global)
+    /// </summary>
+    public string? CustomWineExecutablePath { get; set; }
+    
+    /// <summary>
+    /// Custom proton path for this game (overrides global)
+    /// </summary>
+    public string? CustomProtonPath { get; set; }
+    
+    /// <summary>
+    /// Whether to use Proton instead of Wine for this game (overrides global when UseCustomRunner is true)
+    /// </summary>
+    public bool? UseProton { get; set; }
+    
+    /// <summary>
+    /// Selected region for this game (overrides global when set)
+    /// </summary>
+    public string? SelectedRegion { get; set; }
 }
 
 /// <summary>
@@ -99,4 +129,45 @@ public enum GraphicsQuality
     High,
     Highest,
     Custom
+}
+
+/// <summary>
+/// Represents a downloadable Wine/Proton runner
+/// </summary>
+public class WineRunner
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Version { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public WineRunnerType Type { get; set; }
+    public string DownloadUrl { get; set; } = string.Empty;
+    /// <summary>
+    /// MD5 checksum of the download file for verification (lowercase hex string)
+    /// </summary>
+    public string? Md5Checksum { get; set; }
+    public bool IsInstalled { get; set; }
+    public string? InstallPath { get; set; }
+}
+
+/// <summary>
+/// Type of wine runner
+/// </summary>
+public enum WineRunnerType
+{
+    Wine,
+    Proton
+}
+
+/// <summary>
+/// List of installed custom runners stored in settings
+/// </summary>
+public class InstalledRunner
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Version { get; set; } = string.Empty;
+    public WineRunnerType Type { get; set; }
+    public string InstallPath { get; set; } = string.Empty;
+    public string ExecutablePath { get; set; } = string.Empty;
 }

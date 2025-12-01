@@ -232,37 +232,56 @@ public class GameLauncherService
         var gameSettings = settings.GameSpecificSettings.GetValueOrDefault(game.Id);
 
         // Determine whether to use Proton or Wine
+        // Check per-game settings first, then fall back to global settings
         string winePath;
         bool isProton = false;
         bool useProtonScript = false; // True when using the proton script (not wine binary inside Proton)
         
-        if (settings.UseProton && !string.IsNullOrEmpty(settings.ProtonPath))
+        // Check if game has custom runner settings
+        var useCustomRunner = gameSettings?.UseCustomRunner == true;
+        var gameUseProton = useCustomRunner && gameSettings?.UseProton == true 
+            ? true 
+            : (useCustomRunner && gameSettings?.UseProton == false ? false : settings.UseProton);
+        var gameProtonPath = useCustomRunner && !string.IsNullOrEmpty(gameSettings?.CustomProtonPath)
+            ? gameSettings.CustomProtonPath
+            : settings.ProtonPath;
+        var gameWinePath = useCustomRunner && !string.IsNullOrEmpty(gameSettings?.CustomWineExecutablePath)
+            ? gameSettings.CustomWineExecutablePath
+            : settings.WineExecutablePath;
+        
+        if (gameUseProton && !string.IsNullOrEmpty(gameProtonPath))
         {
             // When Proton is enabled, always use the proton script (not wine binary inside Proton)
             // The proton script handles all the Proton magic (DXVK, VKD3D, etc.)
-            var protonScriptPath = Path.Combine(settings.ProtonPath, "proton");
+            var protonScriptPath = Path.Combine(gameProtonPath, "proton");
             if (File.Exists(protonScriptPath))
             {
                 winePath = protonScriptPath;
                 isProton = true;
                 useProtonScript = true;
-                Log.Information("Using Proton script from {Path}", protonScriptPath);
+                Log.Information("Using Proton script from {Path} for game {Game}", protonScriptPath, game.DisplayName);
             }
             else
             {
-                Log.Warning("Proton path configured but proton script not found at {Path}, falling back to Wine", settings.ProtonPath);
-                winePath = settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine";
+                Log.Warning("Proton path configured but proton script not found at {Path}, falling back to Wine", gameProtonPath);
+                winePath = !string.IsNullOrEmpty(gameWinePath) ? gameWinePath : (settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine");
             }
         }
         else
         {
-            winePath = settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine";
+            winePath = !string.IsNullOrEmpty(gameWinePath) ? gameWinePath : (settings.UseSystemWine ? "wine" : settings.WineExecutablePath ?? "wine");
         }
 
         // Determine wine prefix - use per-game prefix by default
-        var winePrefix = gameSettings?.UseCustomWinePrefix == true
-            ? gameSettings.CustomWinePrefixPath
-            : GetGameWinePrefixPath(game);
+        string? winePrefix;
+        if (gameSettings?.UseCustomWinePrefix == true && !string.IsNullOrEmpty(gameSettings.CustomWinePrefixPath))
+        {
+            winePrefix = gameSettings.CustomWinePrefixPath;
+        }
+        else
+        {
+            winePrefix = GetGameWinePrefixPath(game);
+        }
 
         // Ensure wine prefix directory exists
         if (!string.IsNullOrEmpty(winePrefix))
