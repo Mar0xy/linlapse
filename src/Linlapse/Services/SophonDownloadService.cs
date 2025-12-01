@@ -154,7 +154,7 @@ public class SophonDownloadService : IDisposable
                 return null;
             }
             
-            // Navigate to data.game_branches[0].main.major
+            // Navigate to data.game_branches[0].main
             if (!root.TryGetProperty("data", out var data))
             {
                 Log.Warning("No data property in branch response for {GameId}", game.Id);
@@ -174,48 +174,59 @@ public class SophonDownloadService : IDisposable
                 return null;
             }
             
-            if (!main.TryGetProperty("major", out var major))
-            {
-                Log.Warning("No major property in main for {GameId}", game.Id);
-                return null;
-            }
+            // The properties can be directly under 'main' or under 'main.major'
+            // Try to get the source element - prefer 'main' directly, fallback to 'main.major'
+            JsonElement sourceElement = main;
+            bool hasMajor = main.TryGetProperty("major", out var major);
             
             // Extract branch, password, and package_id
-            var branch = major.TryGetProperty("res_list_url", out var resListUrl) 
-                ? ExtractBranchFromUrl(resListUrl.GetString()) 
-                : null;
-            
-            // Try to get branch from different paths
-            if (string.IsNullOrEmpty(branch) && major.TryGetProperty("game_pkgs", out var gamePkgs) && gamePkgs.GetArrayLength() > 0)
-            {
-                var firstPkg = gamePkgs[0];
-                if (firstPkg.TryGetProperty("url", out var pkgUrl))
-                {
-                    branch = ExtractBranchFromUrl(pkgUrl.GetString());
-                }
-            }
-            
-            // Get password and package_id from the branch structure
+            string? branch = null;
             string? password = null;
             string? packageId = null;
             
+            // First try to get directly from 'main'
+            if (main.TryGetProperty("branch", out var mainBranch))
+                branch = mainBranch.GetString();
+            if (main.TryGetProperty("password", out var mainPwd))
+                password = mainPwd.GetString();
+            if (main.TryGetProperty("package_id", out var mainPkgId))
+                packageId = mainPkgId.GetString();
+            
+            // If not found, try from 'main.major' (older API structure)
+            if (hasMajor)
+            {
+                if (string.IsNullOrEmpty(branch) && major.TryGetProperty("branch", out var majorBranch))
+                    branch = majorBranch.GetString();
+                if (string.IsNullOrEmpty(password) && major.TryGetProperty("password", out var majorPwd))
+                    password = majorPwd.GetString();
+                if (string.IsNullOrEmpty(packageId) && major.TryGetProperty("package_id", out var majorPkgId))
+                    packageId = majorPkgId.GetString();
+                
+                // Try extracting branch from URLs in major
+                if (string.IsNullOrEmpty(branch))
+                {
+                    if (major.TryGetProperty("res_list_url", out var resListUrl))
+                        branch = ExtractBranchFromUrl(resListUrl.GetString());
+                    
+                    if (string.IsNullOrEmpty(branch) && major.TryGetProperty("game_pkgs", out var gamePkgs) && gamePkgs.GetArrayLength() > 0)
+                    {
+                        var firstPkg = gamePkgs[0];
+                        if (firstPkg.TryGetProperty("url", out var pkgUrl))
+                            branch = ExtractBranchFromUrl(pkgUrl.GetString());
+                    }
+                }
+            }
+            
+            // Also check firstBranch.branch structure as another fallback
             if (firstBranch.TryGetProperty("branch", out var branchProp))
             {
-                if (branchProp.TryGetProperty("password", out var pwd))
+                if (string.IsNullOrEmpty(password) && branchProp.TryGetProperty("password", out var pwd))
                     password = pwd.GetString();
-                if (branchProp.TryGetProperty("package_id", out var pkgId))
+                if (string.IsNullOrEmpty(packageId) && branchProp.TryGetProperty("package_id", out var pkgId))
                     packageId = pkgId.GetString();
                 if (string.IsNullOrEmpty(branch) && branchProp.TryGetProperty("branch", out var br))
                     branch = br.GetString();
             }
-            
-            // Fallback: try getting from main.major
-            if (string.IsNullOrEmpty(password) && major.TryGetProperty("password", out var majorPwd))
-                password = majorPwd.GetString();
-            if (string.IsNullOrEmpty(packageId) && major.TryGetProperty("package_id", out var majorPkgId))
-                packageId = majorPkgId.GetString();
-            if (string.IsNullOrEmpty(branch) && major.TryGetProperty("branch", out var majorBranch))
-                branch = majorBranch.GetString();
             
             if (string.IsNullOrEmpty(branch) || string.IsNullOrEmpty(password) || string.IsNullOrEmpty(packageId))
             {
