@@ -283,63 +283,223 @@ public class WineRunnerService
     {
         await Task.Run(() =>
         {
-            Exception? sharpCompressException = null;
+            var extension = Path.GetExtension(archivePath).ToLowerInvariant();
+            var fileName = Path.GetFileName(archivePath).ToLowerInvariant();
+            
+            // Extract to a temporary directory first, then strip single top-level directory if present
+            var tempExtractDir = Path.Combine(Path.GetTempPath(), $"linlapse_extract_{Guid.NewGuid()}");
+            Directory.CreateDirectory(tempExtractDir);
             
             try
             {
-                using var archive = ArchiveFactory.Open(archivePath);
-                var entries = archive.Entries.Where(e => !e.IsDirectory).ToList();
-                var totalEntries = entries.Count;
-                var processedEntries = 0;
-
-                foreach (var entry in entries)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var destinationPath = Path.Combine(destDir, entry.Key ?? "");
-                    var directory = Path.GetDirectoryName(destinationPath);
-                    if (!string.IsNullOrEmpty(directory))
-                    {
-                        Directory.CreateDirectory(directory);
-                    }
-
-                    entry.WriteToDirectory(destDir, new SharpCompress.Common.ExtractionOptions
-                    {
-                        ExtractFullPath = true,
-                        Overwrite = true
-                    });
-
-                    processedEntries++;
-                    var extractProgress = ExtractionProgressStart + (double)processedEntries / totalEntries * (ExtractionProgressMax - ExtractionProgressStart);
-                    progress?.Report(extractProgress);
-                }
-            }
-            catch (Exception ex)
-            {
-                sharpCompressException = ex;
-                Log.Warning(ex, "SharpCompress extraction failed, trying system tar");
+                bool extracted = false;
                 
+                // Try native tools first for common archive formats
+                // This is more reliable and faster than SharpCompress for most formats
+                
+                // Try tar for .tar.* archives (most wine/proton runners)
+                if (fileName.EndsWith(".tar.xz") || fileName.EndsWith(".tar.gz") || 
+                    fileName.EndsWith(".tar.zst") || fileName.EndsWith(".tar.bz2") ||
+                    extension == ".tar" || extension == ".tgz" || extension == ".txz")
+                {
+                    try
+                    {
+                        Log.Information("Extracting with native tar: {Path}", archivePath);
+                        ExtractWithSystemTar(archivePath, tempExtractDir);
+                        extracted = true;
+                    }
+                    catch (Exception tarEx)
+                    {
+                        Log.Warning(tarEx, "Native tar extraction failed, will try other methods");
+                    }
+                }
+                
+                // Try 7z for various archive formats
+                if (!extracted && TryExtractWith7z(archivePath, tempExtractDir))
+                {
+                    Log.Information("Extracted with native 7z: {Path}", archivePath);
+                    extracted = true;
+                }
+                
+                // Try unzip for .zip files
+                if (!extracted && extension == ".zip")
+                {
+                    try
+                    {
+                        Log.Information("Extracting with native unzip: {Path}", archivePath);
+                        ExtractWithUnzip(archivePath, tempExtractDir);
+                        extracted = true;
+                    }
+                    catch (Exception unzipEx)
+                    {
+                        Log.Warning(unzipEx, "Native unzip extraction failed, will try SharpCompress");
+                    }
+                }
+                
+                // Fallback to SharpCompress for other formats or if native tools failed
+                if (!extracted)
+                {
+                    try
+                    {
+                        Log.Information("Extracting with SharpCompress: {Path}", archivePath);
+                        using var archive = ArchiveFactory.Open(archivePath);
+                        var entries = archive.Entries.Where(e => !e.IsDirectory).ToList();
+                        var totalEntries = entries.Count;
+                        var processedEntries = 0;
+
+                        foreach (var entry in entries)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            var destinationPath = Path.Combine(tempExtractDir, entry.Key ?? "");
+                            var directory = Path.GetDirectoryName(destinationPath);
+                            if (!string.IsNullOrEmpty(directory))
+                            {
+                                Directory.CreateDirectory(directory);
+                            }
+
+                            entry.WriteToDirectory(tempExtractDir, new SharpCompress.Common.ExtractionOptions
+                            {
+                                ExtractFullPath = true,
+                                Overwrite = true
+                            });
+
+                            processedEntries++;
+                            var extractProgress = ExtractionProgressStart + (double)processedEntries / totalEntries * (ExtractionProgressMax - ExtractionProgressStart) * 0.8;
+                            progress?.Report(extractProgress);
+                        }
+                        extracted = true;
+                    }
+                    catch (Exception sharpCompressEx)
+                    {
+                        Log.Error(sharpCompressEx, "All extraction methods failed for {Path}", archivePath);
+                        throw new Exception($"Failed to extract archive '{archivePath}'. Tried native tools and SharpCompress. Error: {sharpCompressEx.Message}", sharpCompressEx);
+                    }
+                }
+                
+                // Now move files to destination, stripping single top-level directory if present
+                MoveExtractedFilesToDestination(tempExtractDir, destDir);
+                progress?.Report(ExtractionProgressMax);
+            }
+            finally
+            {
+                // Clean up temp directory
                 try
                 {
-                    // Fallback to system tar for .tar.xz, .tar.gz, .tar.zst files
-                    ExtractWithSystemTar(archivePath, destDir);
+                    if (Directory.Exists(tempExtractDir))
+                    {
+                        Directory.Delete(tempExtractDir, true);
+                    }
                 }
-                catch (Exception tarEx)
+                catch (Exception ex)
                 {
-                    // Include both exceptions for debugging
-                    throw new AggregateException(
-                        $"Failed to extract archive. SharpCompress error: {sharpCompressException.Message}. System tar error: {tarEx.Message}",
-                        sharpCompressException, tarEx);
+                    Log.Warning(ex, "Failed to clean up temp extraction directory: {Path}", tempExtractDir);
                 }
             }
         }, cancellationToken);
     }
+    
+    /// <summary>
+    /// Move extracted files to destination, stripping single top-level directory if present
+    /// </summary>
+    private static void MoveExtractedFilesToDestination(string sourceDir, string destDir)
+    {
+        var topLevelEntries = Directory.GetFileSystemEntries(sourceDir);
+        
+        // Check if there's a single top-level directory (common for wine/proton archives)
+        if (topLevelEntries.Length == 1 && Directory.Exists(topLevelEntries[0]))
+        {
+            var singleTopDir = topLevelEntries[0];
+            Log.Information("Stripping single top-level directory: {Dir}", Path.GetFileName(singleTopDir));
+            
+            // Move contents of the single directory to destination
+            foreach (var entry in Directory.GetFileSystemEntries(singleTopDir))
+            {
+                var entryName = Path.GetFileName(entry);
+                var destPath = Path.Combine(destDir, entryName);
+                
+                if (Directory.Exists(entry))
+                {
+                    MoveDirectoryContents(entry, destPath);
+                }
+                else
+                {
+                    if (File.Exists(destPath))
+                        File.Delete(destPath);
+                    File.Move(entry, destPath);
+                }
+            }
+        }
+        else
+        {
+            // No single top-level directory, move everything as-is
+            foreach (var entry in topLevelEntries)
+            {
+                var entryName = Path.GetFileName(entry);
+                var destPath = Path.Combine(destDir, entryName);
+                
+                if (Directory.Exists(entry))
+                {
+                    MoveDirectoryContents(entry, destPath);
+                }
+                else
+                {
+                    if (File.Exists(destPath))
+                        File.Delete(destPath);
+                    File.Move(entry, destPath);
+                }
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Recursively move directory contents
+    /// </summary>
+    private static void MoveDirectoryContents(string sourceDir, string destDir)
+    {
+        Directory.CreateDirectory(destDir);
+        
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            var destFile = Path.Combine(destDir, Path.GetFileName(file));
+            if (File.Exists(destFile))
+                File.Delete(destFile);
+            File.Move(file, destFile);
+        }
+        
+        foreach (var dir in Directory.GetDirectories(sourceDir))
+        {
+            var destSubDir = Path.Combine(destDir, Path.GetFileName(dir));
+            MoveDirectoryContents(dir, destSubDir);
+        }
+    }
 
     private static void ExtractWithSystemTar(string archivePath, string destDir)
     {
-        var args = archivePath.EndsWith(".tar.zst", StringComparison.OrdinalIgnoreCase)
-            ? $"--zstd -xf \"{archivePath}\" -C \"{destDir}\""
-            : $"-xf \"{archivePath}\" -C \"{destDir}\"";
+        var fileName = Path.GetFileName(archivePath).ToLowerInvariant();
+        
+        // Determine tar arguments based on compression type
+        string args;
+        if (fileName.EndsWith(".tar.zst"))
+        {
+            args = $"--zstd -xf \"{archivePath}\" -C \"{destDir}\"";
+        }
+        else if (fileName.EndsWith(".tar.xz") || fileName.EndsWith(".txz"))
+        {
+            args = $"-xJf \"{archivePath}\" -C \"{destDir}\"";
+        }
+        else if (fileName.EndsWith(".tar.gz") || fileName.EndsWith(".tgz"))
+        {
+            args = $"-xzf \"{archivePath}\" -C \"{destDir}\"";
+        }
+        else if (fileName.EndsWith(".tar.bz2"))
+        {
+            args = $"-xjf \"{archivePath}\" -C \"{destDir}\"";
+        }
+        else
+        {
+            args = $"-xf \"{archivePath}\" -C \"{destDir}\"";
+        }
 
         var process = new System.Diagnostics.Process
         {
@@ -359,7 +519,98 @@ public class WineRunnerService
         if (process.ExitCode != 0)
         {
             var error = process.StandardError.ReadToEnd();
-            throw new Exception($"tar extraction failed: {error}");
+            throw new Exception($"tar extraction failed (exit code {process.ExitCode}): {error}");
+        }
+    }
+    
+    private static bool TryExtractWith7z(string archivePath, string destDir)
+    {
+        // Check if 7z is available
+        try
+        {
+            var checkProcess = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "7z",
+                    Arguments = "--help",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+            
+            checkProcess.Start();
+            checkProcess.WaitForExit(1000);
+            
+            if (checkProcess.ExitCode != 0)
+            {
+                return false;
+            }
+        }
+        catch
+        {
+            // 7z not available
+            return false;
+        }
+        
+        try
+        {
+            Log.Information("Extracting with native 7z: {Path}", archivePath);
+            
+            var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "7z",
+                    Arguments = $"x \"{archivePath}\" -o\"{destDir}\" -y",
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.Start();
+            process.WaitForExit();
+
+            if (process.ExitCode != 0)
+            {
+                var error = process.StandardError.ReadToEnd();
+                Log.Warning("7z extraction failed (exit code {ExitCode}): {Error}", process.ExitCode, error);
+                return false;
+            }
+            
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "7z extraction failed");
+            return false;
+        }
+    }
+    
+    private static void ExtractWithUnzip(string archivePath, string destDir)
+    {
+        var process = new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "unzip",
+                Arguments = $"-o \"{archivePath}\" -d \"{destDir}\"",
+                UseShellExecute = false,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+
+        process.Start();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+        {
+            var error = process.StandardError.ReadToEnd();
+            throw new Exception($"unzip extraction failed (exit code {process.ExitCode}): {error}");
         }
     }
 
