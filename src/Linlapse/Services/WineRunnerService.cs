@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Linlapse.Models;
 using Serilog;
@@ -22,13 +23,15 @@ public class WineRunnerService
     };
     
     // Progress constants for clarity
-    private const double DownloadProgressMax = 50.0;
+    private const double DownloadProgressMax = 45.0;
+    private const double VerificationProgress = 50.0;
     private const double ExtractionProgressStart = 50.0;
     private const double ExtractionProgressMax = 100.0;
 
     /// <summary>
     /// Predefined list of popular wine/proton runners available for download.
     /// Note: Versions are pinned for stability. Check GitHub releases for newer versions.
+    /// MD5 checksums should be updated when versions change.
     /// </summary>
     private static readonly List<WineRunner> AvailableRunners = new()
     {
@@ -41,6 +44,7 @@ public class WineRunnerService
             Description = "Wine with additional patches",
             Type = WineRunnerType.Wine,
             DownloadUrl = "https://github.com/NelloKudo/Wine-Builds/releases/download/wine-tkg-aagl-v10.15-7/spritz-wine-tkg-staging-wow64-10.15-7-x86_64.tar.xz",
+            Md5Checksum = null, // Will be computed on first download if not provided
             Size = 300_000_000
         },
         // Proton runners
@@ -52,6 +56,7 @@ public class WineRunnerService
             Description = "CachyOS optimized Proton build with performance improvements",
             Type = WineRunnerType.Proton,
             DownloadUrl = "https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-10.0-20251126-slr/proton-cachyos-10.0-20251126-slr-x86_64.tar.xz",
+            Md5Checksum = null, // Will be computed on first download if not provided
             Size = 289_000_000
         },
         new WineRunner
@@ -62,6 +67,7 @@ public class WineRunnerService
             Description = "Special proton made by dawn winery",
             Type = WineRunnerType.Proton,
             DownloadUrl = "https://dawn.wine/dawn-winery/dwproton/releases/download/dwproton-10.0-8/dwproton-10.0-8-x86_64.tar.xz",
+            Md5Checksum = null, // Will be computed on first download if not provided
             Size = 289_000_000
         }
     };
@@ -101,6 +107,7 @@ public class WineRunnerService
                 Description = runner.Description,
                 Type = runner.Type,
                 DownloadUrl = runner.DownloadUrl,
+                Md5Checksum = runner.Md5Checksum,
                 Size = runner.Size
             };
 
@@ -179,6 +186,37 @@ public class WineRunnerService
                     progress?.Report(downloadProgress);
                     DownloadProgressChanged?.Invoke(this, (runnerId, downloadProgress));
                 }
+            }
+
+            // Verify MD5 checksum if available
+            Log.Information("Verifying MD5 checksum for {Name}", runner.Name);
+            progress?.Report(VerificationProgress);
+            DownloadProgressChanged?.Invoke(this, (runnerId, VerificationProgress));
+            
+            var computedMd5 = await ComputeMd5ChecksumAsync(downloadPath, cancellationToken);
+            Log.Information("Computed MD5 checksum: {Checksum} for {Name}", computedMd5, runner.Name);
+            
+            if (!string.IsNullOrEmpty(runner.Md5Checksum))
+            {
+                if (!string.Equals(computedMd5, runner.Md5Checksum, StringComparison.OrdinalIgnoreCase))
+                {
+                    Log.Error("MD5 checksum mismatch for {Name}. Expected: {Expected}, Got: {Actual}", 
+                        runner.Name, runner.Md5Checksum, computedMd5);
+                    
+                    // Clean up the downloaded file
+                    if (File.Exists(downloadPath))
+                    {
+                        File.Delete(downloadPath);
+                    }
+                    
+                    return false;
+                }
+                Log.Information("MD5 checksum verified successfully for {Name}", runner.Name);
+            }
+            else
+            {
+                Log.Information("No MD5 checksum configured for {Name}, skipping verification. Computed: {Checksum}", 
+                    runner.Name, computedMd5);
             }
 
             Log.Information("Extracting runner to {Path}", installDir);
@@ -418,5 +456,16 @@ public class WineRunnerService
         }
 
         return null;
+    }
+    
+    /// <summary>
+    /// Compute MD5 checksum of a file
+    /// </summary>
+    private static async Task<string> ComputeMd5ChecksumAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        using var md5 = MD5.Create();
+        await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 8192, true);
+        var hash = await md5.ComputeHashAsync(stream, cancellationToken);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 }
