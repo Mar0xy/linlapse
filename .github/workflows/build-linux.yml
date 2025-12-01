@@ -25,10 +25,6 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libvlc-dev
 
-    - name: Install libzstd (required for Sophon)
-      run: |
-        sudo apt-get install -y libzstd1 libzstd-dev
-
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
@@ -50,42 +46,6 @@ jobs:
           -p:PublishTrimmed=false \
           -p:IncludeNativeLibrariesForSelfExtract=true \
           -o ./publish/linux-x64
-
-    - name: Copy libzstd native library
-      run: |
-        # Copy libzstd.so to the publish directory so it's included with the artifact
-        # Find and copy the libzstd library
-        LIBZSTD=$(find /usr/lib -name "libzstd.so*" 2>/dev/null | head -1)
-        if [ -n "$LIBZSTD" ]; then
-          cp -L "$LIBZSTD" ./publish/linux-x64/libzstd.so.1
-          echo "Copied libzstd from $LIBZSTD"
-        else
-          # Try x86_64 specific path
-          if [ -f "/usr/lib/x86_64-linux-gnu/libzstd.so.1" ]; then
-            cp -L /usr/lib/x86_64-linux-gnu/libzstd.so.1 ./publish/linux-x64/
-            echo "Copied libzstd from /usr/lib/x86_64-linux-gnu/"
-          fi
-        fi
-        ls -la ./publish/linux-x64/libzstd* || echo "Warning: libzstd not found"
-
-    - name: Create launcher script
-      run: |
-        # Create a wrapper script that sets LD_LIBRARY_PATH to find bundled native libraries
-        cat > ./publish/linux-x64/linlapse << 'EOF'
-        #!/bin/bash
-        # Wrapper script for Linlapse that sets up the environment for bundled native libraries
-        
-        # Get the directory where this script is located
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        
-        # Add the app directory to LD_LIBRARY_PATH so bundled native libraries are found
-        export LD_LIBRARY_PATH="${SCRIPT_DIR}:${LD_LIBRARY_PATH}"
-        
-        # Run the actual executable
-        exec "${SCRIPT_DIR}/Linlapse" "$@"
-        EOF
-        chmod +x ./publish/linux-x64/linlapse
-        echo "Created launcher script"
 
     - name: Set executable permissions
       run: chmod +x ./publish/linux-x64/Linlapse
