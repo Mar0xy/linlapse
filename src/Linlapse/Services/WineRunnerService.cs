@@ -128,14 +128,20 @@ public class WineRunnerService
     public List<InstalledRunner> GetInstalledRunners()
     {
         var runners = new List<InstalledRunner>();
-        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Use resolved real paths for deduplication to handle symlinks
+        // (e.g., ~/.steam/root and ~/.steam/steam often point to the same directory)
+        var seenRealPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         
         // 1. Get runners installed via the launcher (from settings)
         foreach (var runner in _settingsService.Settings.InstalledRunners)
         {
-            if (Directory.Exists(runner.InstallPath) && seenPaths.Add(runner.InstallPath))
+            if (Directory.Exists(runner.InstallPath))
             {
-                runners.Add(runner);
+                var realPath = GetRealPath(runner.InstallPath);
+                if (seenRealPaths.Add(realPath))
+                {
+                    runners.Add(runner);
+                }
             }
         }
         
@@ -148,7 +154,8 @@ public class WineRunnerService
                 var detectedRunners = ScanForRunners(compatDir, "steam");
                 foreach (var runner in detectedRunners)
                 {
-                    if (seenPaths.Add(runner.InstallPath))
+                    var realPath = GetRealPath(runner.InstallPath);
+                    if (seenRealPaths.Add(realPath))
                     {
                         runners.Add(runner);
                     }
@@ -162,7 +169,8 @@ public class WineRunnerService
             var detectedRunners = ScanForRunners(_runnersDirectory, "linlapse");
             foreach (var runner in detectedRunners)
             {
-                if (seenPaths.Add(runner.InstallPath))
+                var realPath = GetRealPath(runner.InstallPath);
+                if (seenRealPaths.Add(realPath))
                 {
                     runners.Add(runner);
                 }
@@ -170,6 +178,45 @@ public class WineRunnerService
         }
         
         return runners;
+    }
+    
+    /// <summary>
+    /// Get the real path by resolving symlinks
+    /// </summary>
+    private static string GetRealPath(string path)
+    {
+        try
+        {
+            // On Linux, use realpath to resolve symlinks
+            var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "realpath",
+                    Arguments = $"\"{path}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+            
+            process.Start();
+            var output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit(1000);
+            
+            if (process.ExitCode == 0 && !string.IsNullOrEmpty(output))
+            {
+                return output;
+            }
+        }
+        catch
+        {
+            // Fallback if realpath is not available
+        }
+        
+        // Fallback: return the original path
+        return path;
     }
     
     /// <summary>
