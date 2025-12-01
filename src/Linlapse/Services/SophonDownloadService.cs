@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Text.Json;
 using Hi3Helper.Sophon;
 using Hi3Helper.Sophon.Structs;
 using Linlapse.Models;
@@ -17,8 +18,8 @@ public class SophonDownloadService : IDisposable
     private readonly SettingsService _settingsService;
     private readonly GameService _gameService;
     
-    // Sophon API URLs for different games/regions
-    private static readonly Dictionary<string, string> SophonBuildUrls = new()
+    // Game branch API URLs - used to get branch, password, and package_id
+    private static readonly Dictionary<string, string> GameBranchUrls = new()
     {
         // Genshin Impact - Global
         { "genshin-global", "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=1Z8W5NHUQb&launcher_id=VYTpXlbWo8" },
@@ -29,6 +30,10 @@ public class SophonDownloadService : IDisposable
         // Zenless Zone Zero - China
         { "zzz-cn", "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=x6znKlJ0xK&launcher_id=jGHBHlcOq1" }
     };
+    
+    // Sophon chunk API base URLs
+    private const string SophonChunkApiGlobal = "https://sg-public-api.hoyoverse.com/downloader/sophon_chunk/api/getBuild";
+    private const string SophonChunkApiChina = "https://api-takumi.mihoyo.com/downloader/sophon_chunk/api/getBuild";
     
     public event EventHandler<SophonDownloadProgress>? DownloadProgressChanged;
     public event EventHandler<string>? DownloadCompleted;
@@ -52,20 +57,14 @@ public class SophonDownloadService : IDisposable
     
     /// <summary>
     /// Check if a game supports Sophon downloads.
-    /// NOTE: Sophon download support is currently disabled due to API endpoint issues.
-    /// The API URLs and matching fields need to be properly configured based on the 
-    /// official HoYoPlay launcher API structure. For now, traditional archive downloads
-    /// will be used. This can be re-enabled once the correct API endpoints are determined.
+    /// Sophon is supported for Genshin Impact and Zenless Zone Zero.
     /// </summary>
     public static bool SupportsSophon(GameType gameType)
     {
         // According to Hi3Helper.Sophon README, Sophon is currently supported for:
         // - Genshin Impact
         // - Zenless Zone Zero
-        // However, the correct API endpoints need to be determined first.
-        // Returning false to use traditional downloads until API is fixed.
-        _ = gameType; // Suppress unused parameter warning
-        return false;
+        return gameType == GameType.GenshinImpact || gameType == GameType.ZenlessZoneZero;
     }
     
     /// <summary>
@@ -77,9 +76,9 @@ public class SophonDownloadService : IDisposable
     }
     
     /// <summary>
-    /// Get the Sophon build URL for a game
+    /// Get the game branch URL for fetching branch info
     /// </summary>
-    private static string? GetSophonBuildUrl(GameInfo game)
+    private static string? GetGameBranchUrl(GameInfo game)
     {
         var key = game.GameType switch
         {
@@ -88,7 +87,161 @@ public class SophonDownloadService : IDisposable
             _ => null
         };
         
-        return key != null && SophonBuildUrls.TryGetValue(key, out var url) ? url : null;
+        return key != null && GameBranchUrls.TryGetValue(key, out var url) ? url : null;
+    }
+    
+    /// <summary>
+    /// Get the Sophon chunk API base URL based on region.
+    /// China region uses api-takumi.mihoyo.com, all other regions (Global, SEA, Europe, America, Asia, TW_HK_MO)
+    /// use sg-public-api.hoyoverse.com as they all connect to HoYoverse's global infrastructure.
+    /// </summary>
+    private static string GetSophonChunkApiUrl(GameRegion region)
+    {
+        return region == GameRegion.China ? SophonChunkApiChina : SophonChunkApiGlobal;
+    }
+    
+    /// <summary>
+    /// Fetch branch info (branch, password, package_id) from the game branches API
+    /// </summary>
+    private async Task<SophonBranchInfo?> GetBranchInfoAsync(GameInfo game, CancellationToken cancellationToken)
+    {
+        var branchUrl = GetGameBranchUrl(game);
+        if (string.IsNullOrEmpty(branchUrl))
+        {
+            Log.Warning("No branch URL found for game: {GameId}", game.Id);
+            return null;
+        }
+        
+        try
+        {
+            Log.Information("Fetching branch info for {GameId} from {Url}", game.Id, branchUrl);
+            
+            var response = await _httpClient.GetStringAsync(branchUrl, cancellationToken);
+            using var doc = JsonDocument.Parse(response);
+            
+            var root = doc.RootElement;
+            
+            // Check for successful response
+            if (root.TryGetProperty("retcode", out var retcode) && retcode.GetInt32() != 0)
+            {
+                Log.Warning("Branch API returned error for {GameId}: {Retcode}", game.Id, retcode.GetInt32());
+                return null;
+            }
+            
+            // Navigate to data.game_branches[0].main.major
+            if (!root.TryGetProperty("data", out var data))
+            {
+                Log.Warning("No data property in branch response for {GameId}", game.Id);
+                return null;
+            }
+            
+            if (!data.TryGetProperty("game_branches", out var branches) || branches.GetArrayLength() == 0)
+            {
+                Log.Warning("No game_branches in branch response for {GameId}", game.Id);
+                return null;
+            }
+            
+            var firstBranch = branches[0];
+            if (!firstBranch.TryGetProperty("main", out var main))
+            {
+                Log.Warning("No main property in branch for {GameId}", game.Id);
+                return null;
+            }
+            
+            if (!main.TryGetProperty("major", out var major))
+            {
+                Log.Warning("No major property in main for {GameId}", game.Id);
+                return null;
+            }
+            
+            // Extract branch, password, and package_id
+            var branch = major.TryGetProperty("res_list_url", out var resListUrl) 
+                ? ExtractBranchFromUrl(resListUrl.GetString()) 
+                : null;
+            
+            // Try to get branch from different paths
+            if (string.IsNullOrEmpty(branch) && major.TryGetProperty("game_pkgs", out var gamePkgs) && gamePkgs.GetArrayLength() > 0)
+            {
+                var firstPkg = gamePkgs[0];
+                if (firstPkg.TryGetProperty("url", out var pkgUrl))
+                {
+                    branch = ExtractBranchFromUrl(pkgUrl.GetString());
+                }
+            }
+            
+            // Get password and package_id from the branch structure
+            string? password = null;
+            string? packageId = null;
+            
+            if (firstBranch.TryGetProperty("branch", out var branchProp))
+            {
+                if (branchProp.TryGetProperty("password", out var pwd))
+                    password = pwd.GetString();
+                if (branchProp.TryGetProperty("package_id", out var pkgId))
+                    packageId = pkgId.GetString();
+                if (string.IsNullOrEmpty(branch) && branchProp.TryGetProperty("branch", out var br))
+                    branch = br.GetString();
+            }
+            
+            // Fallback: try getting from main.major
+            if (string.IsNullOrEmpty(password) && major.TryGetProperty("password", out var majorPwd))
+                password = majorPwd.GetString();
+            if (string.IsNullOrEmpty(packageId) && major.TryGetProperty("package_id", out var majorPkgId))
+                packageId = majorPkgId.GetString();
+            if (string.IsNullOrEmpty(branch) && major.TryGetProperty("branch", out var majorBranch))
+                branch = majorBranch.GetString();
+            
+            if (string.IsNullOrEmpty(branch) || string.IsNullOrEmpty(password) || string.IsNullOrEmpty(packageId))
+            {
+                Log.Warning("Missing required branch info for {GameId}: branch={Branch}, password={HasPassword}, package_id={HasPackageId}", 
+                    game.Id, branch, !string.IsNullOrEmpty(password), !string.IsNullOrEmpty(packageId));
+                return null;
+            }
+            
+            Log.Information("Got branch info for {GameId}: branch={Branch}, package_id={PackageId}", 
+                game.Id, branch, packageId);
+            
+            return new SophonBranchInfo
+            {
+                Branch = branch,
+                Password = password,
+                PackageId = packageId
+            };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to fetch branch info for {GameId}", game.Id);
+            return null;
+        }
+    }
+    
+    /// <summary>
+    /// Extract branch name from a URL (helper method)
+    /// </summary>
+    private static string? ExtractBranchFromUrl(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+        
+        // Try to extract branch from URL patterns like .../branch_name/...
+        var segments = url.Split('/');
+        // Look for segment that looks like a branch name (typically after 'output' or contains version info)
+        foreach (var segment in segments)
+        {
+            if (segment.Contains("_") && !segment.Contains(".") && segment.Length > 5)
+            {
+                return segment;
+            }
+        }
+        return null;
+    }
+    
+    /// <summary>
+    /// Build the Sophon getBuild URL from branch info
+    /// </summary>
+    private static string BuildSophonGetBuildUrl(GameInfo game, SophonBranchInfo branchInfo)
+    {
+        var baseUrl = GetSophonChunkApiUrl(game.Region);
+        return $"{baseUrl}?branch={branchInfo.Branch}&password={branchInfo.Password}&package_id={branchInfo.PackageId}";
     }
     
     /// <summary>
@@ -109,15 +262,18 @@ public class SophonDownloadService : IDisposable
             return null;
         }
         
-        var sophonUrl = GetSophonBuildUrl(game);
-        if (string.IsNullOrEmpty(sophonUrl))
-        {
-            Log.Warning("No Sophon URL found for game: {GameId}", gameId);
-            return null;
-        }
-        
         try
         {
+            // Step 1: Get branch info from getGameBranches API
+            var branchInfo = await GetBranchInfoAsync(game, cancellationToken);
+            if (branchInfo == null)
+            {
+                Log.Warning("Failed to get branch info for {GameId}", gameId);
+                return null;
+            }
+            
+            // Step 2: Build the Sophon getBuild URL and fetch manifest
+            var sophonUrl = BuildSophonGetBuildUrl(game, branchInfo);
             Log.Information("Fetching Sophon manifest for {GameId} from {Url}", gameId, sophonUrl);
             
             var manifestPair = await SophonManifest.CreateSophonChunkManifestInfoPair(
@@ -347,4 +503,14 @@ public enum SophonDownloadState
     Completed,
     Failed,
     Cancelled
+}
+
+/// <summary>
+/// Branch info from getGameBranches API
+/// </summary>
+public class SophonBranchInfo
+{
+    public string Branch { get; init; } = string.Empty;
+    public string Password { get; init; } = string.Empty;
+    public string PackageId { get; init; } = string.Empty;
 }
