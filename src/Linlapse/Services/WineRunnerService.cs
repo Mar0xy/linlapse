@@ -121,15 +121,195 @@ public class WineRunnerService
     }
 
     /// <summary>
-    /// Get list of installed runners
+    /// Get list of installed runners from various sources:
+    /// - Runners installed via the launcher
+    /// - Runners from Steam's compatibilitytools.d folder
     /// </summary>
     public List<InstalledRunner> GetInstalledRunners()
     {
-        var installedRunners = _settingsService.Settings.InstalledRunners
-            .Where(r => Directory.Exists(r.InstallPath))
-            .ToList();
-
-        return installedRunners;
+        var runners = new List<InstalledRunner>();
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        
+        // 1. Get runners installed via the launcher (from settings)
+        foreach (var runner in _settingsService.Settings.InstalledRunners)
+        {
+            if (Directory.Exists(runner.InstallPath) && seenPaths.Add(runner.InstallPath))
+            {
+                runners.Add(runner);
+            }
+        }
+        
+        // 2. Scan Steam's compatibilitytools.d directories
+        var steamCompatDirs = GetSteamCompatibilityToolsDirectories();
+        foreach (var compatDir in steamCompatDirs)
+        {
+            if (Directory.Exists(compatDir))
+            {
+                var detectedRunners = ScanForRunners(compatDir, "steam");
+                foreach (var runner in detectedRunners)
+                {
+                    if (seenPaths.Add(runner.InstallPath))
+                    {
+                        runners.Add(runner);
+                    }
+                }
+            }
+        }
+        
+        // 3. Scan the launcher's runners directory for any manually added runners
+        if (Directory.Exists(_runnersDirectory))
+        {
+            var detectedRunners = ScanForRunners(_runnersDirectory, "linlapse");
+            foreach (var runner in detectedRunners)
+            {
+                if (seenPaths.Add(runner.InstallPath))
+                {
+                    runners.Add(runner);
+                }
+            }
+        }
+        
+        return runners;
+    }
+    
+    /// <summary>
+    /// Get possible Steam compatibilitytools.d directory paths
+    /// </summary>
+    private static List<string> GetSteamCompatibilityToolsDirectories()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return new List<string>
+        {
+            // Standard Steam location
+            Path.Combine(home, ".steam", "root", "compatibilitytools.d"),
+            Path.Combine(home, ".steam", "steam", "compatibilitytools.d"),
+            // Flatpak Steam
+            Path.Combine(home, ".var", "app", "com.valvesoftware.Steam", "data", "Steam", "compatibilitytools.d"),
+            // Snap Steam
+            Path.Combine(home, "snap", "steam", "common", ".steam", "steam", "compatibilitytools.d"),
+            // System-wide
+            "/usr/share/steam/compatibilitytools.d"
+        };
+    }
+    
+    /// <summary>
+    /// Scan a directory for wine/proton runners
+    /// </summary>
+    private static List<InstalledRunner> ScanForRunners(string baseDir, string source)
+    {
+        var runners = new List<InstalledRunner>();
+        
+        try
+        {
+            foreach (var dir in Directory.GetDirectories(baseDir))
+            {
+                var runner = DetectRunner(dir, source);
+                if (runner != null)
+                {
+                    runners.Add(runner);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to scan directory for runners: {Dir}", baseDir);
+        }
+        
+        return runners;
+    }
+    
+    /// <summary>
+    /// Detect if a directory contains a wine or proton runner
+    /// </summary>
+    private static InstalledRunner? DetectRunner(string dir, string source)
+    {
+        var dirName = Path.GetFileName(dir);
+        
+        // Check for Proton (has proton script and toolmanifest.vdf)
+        var protonScript = Path.Combine(dir, "proton");
+        var toolmanifest = Path.Combine(dir, "toolmanifest.vdf");
+        
+        if (File.Exists(protonScript) || File.Exists(toolmanifest))
+        {
+            // This is a Proton runner
+            var version = ExtractVersionFromName(dirName);
+            return new InstalledRunner
+            {
+                Id = $"{source}-proton-{dirName.ToLowerInvariant().Replace(" ", "-")}",
+                Name = dirName,
+                Version = version,
+                Type = WineRunnerType.Proton,
+                InstallPath = dir,
+                ExecutablePath = File.Exists(protonScript) ? protonScript : dir
+            };
+        }
+        
+        // Check for Wine (has bin/wine or bin/wine64)
+        var wineBin = Path.Combine(dir, "bin", "wine");
+        var wine64Bin = Path.Combine(dir, "bin", "wine64");
+        
+        if (File.Exists(wineBin) || File.Exists(wine64Bin))
+        {
+            var version = ExtractVersionFromName(dirName);
+            return new InstalledRunner
+            {
+                Id = $"{source}-wine-{dirName.ToLowerInvariant().Replace(" ", "-")}",
+                Name = dirName,
+                Version = version,
+                Type = WineRunnerType.Wine,
+                InstallPath = dir,
+                ExecutablePath = File.Exists(wine64Bin) ? wine64Bin : wineBin
+            };
+        }
+        
+        // Check for nested structure (e.g., some Proton builds have files/ subfolder)
+        var filesDir = Path.Combine(dir, "files");
+        if (Directory.Exists(filesDir))
+        {
+            var nestedWine = Path.Combine(filesDir, "bin", "wine");
+            var nestedWine64 = Path.Combine(filesDir, "bin", "wine64");
+            
+            if (File.Exists(nestedWine) || File.Exists(nestedWine64))
+            {
+                var version = ExtractVersionFromName(dirName);
+                return new InstalledRunner
+                {
+                    Id = $"{source}-wine-{dirName.ToLowerInvariant().Replace(" ", "-")}",
+                    Name = dirName,
+                    Version = version,
+                    Type = WineRunnerType.Wine,
+                    InstallPath = dir,
+                    ExecutablePath = File.Exists(nestedWine64) ? nestedWine64 : nestedWine
+                };
+            }
+        }
+        
+        return null;
+    }
+    
+    /// <summary>
+    /// Try to extract version from runner directory name
+    /// </summary>
+    private static string ExtractVersionFromName(string name)
+    {
+        // Common patterns: GE-Proton9-25, wine-lutris-GE-Proton9-25-x86_64, Proton-9.0-4
+        var versionPatterns = new[]
+        {
+            @"(\d+[\.\-]\d+[\.\-]?\d*)",  // Match version numbers like 9.0-4, 9-25, 10.0
+            @"Proton[\-\s]?(\d+[\.\-]\d+)",  // Proton specific
+            @"GE[\-\s]?Proton[\-\s]?(\d+[\.\-]\d+)",  // GE-Proton specific
+        };
+        
+        foreach (var pattern in versionPatterns)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(name, pattern);
+            if (match.Success)
+            {
+                return match.Groups[1].Value;
+            }
+        }
+        
+        return "Unknown";
     }
 
     /// <summary>
