@@ -70,14 +70,6 @@ public class SophonDownloadService : IDisposable
     }
     
     /// <summary>
-    /// Gets the install folder name for a game, appending _cn suffix for China region
-    /// </summary>
-    private static string GetInstallFolderName(GameInfo game)
-    {
-        return game.Region == GameRegion.China ? $"{game.Name}_cn" : game.Name;
-    }
-    
-    /// <summary>
     /// Get the Sophon build URL for a game
     /// </summary>
     private static string? GetSophonBuildUrl(GameInfo game)
@@ -179,7 +171,7 @@ public class SophonDownloadService : IDisposable
         installPath ??= Path.Combine(
             _settingsService.Settings.DefaultGameInstallPath ??
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games"),
-            game.Name);
+            GameService.GetInstallFolderName(game));
         
         var downloadProgress = new SophonDownloadProgress
         {
