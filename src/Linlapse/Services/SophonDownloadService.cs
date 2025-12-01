@@ -51,14 +51,21 @@ public class SophonDownloadService : IDisposable
     }
     
     /// <summary>
-    /// Check if a game supports Sophon downloads
+    /// Check if a game supports Sophon downloads.
+    /// NOTE: Sophon download support is currently disabled due to API endpoint issues.
+    /// The API URLs and matching fields need to be properly configured based on the 
+    /// official HoYoPlay launcher API structure. For now, traditional archive downloads
+    /// will be used. This can be re-enabled once the correct API endpoints are determined.
     /// </summary>
     public static bool SupportsSophon(GameType gameType)
     {
         // According to Hi3Helper.Sophon README, Sophon is currently supported for:
         // - Genshin Impact
         // - Zenless Zone Zero
-        return gameType == GameType.GenshinImpact || gameType == GameType.ZenlessZoneZero;
+        // However, the correct API endpoints need to be determined first.
+        // Returning false to use traditional downloads until API is fixed.
+        _ = gameType; // Suppress unused parameter warning
+        return false;
     }
     
     /// <summary>
