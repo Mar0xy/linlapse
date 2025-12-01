@@ -122,6 +122,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _enableLogging = true;
+    
+    // Runner selection for global settings
+    [ObservableProperty]
+    private InstalledRunner? _selectedGlobalWineRunner;
+    
+    [ObservableProperty]
+    private InstalledRunner? _selectedGlobalProtonRunner;
+    
+    public ObservableCollection<InstalledRunner> InstalledWineRunners { get; } = new();
+    public ObservableCollection<InstalledRunner> InstalledProtonRunners { get; } = new();
 
     [ObservableProperty]
     private bool _isJadeiteAvailable;
@@ -1250,6 +1260,62 @@ public partial class MainWindowViewModel : ViewModelBase
         foreach (var option in VoiceLanguageOptions)
         {
             option.IsSelected = settings.SelectedVoiceLanguages.Contains(option.Code);
+        }
+        
+        // Load installed runners and set selections based on current paths
+        LoadInstalledRunners();
+    }
+    
+    private void LoadInstalledRunners()
+    {
+        InstalledWineRunners.Clear();
+        InstalledProtonRunners.Clear();
+        
+        var installedRunners = _wineRunnerService.GetInstalledRunners();
+        
+        foreach (var runner in installedRunners)
+        {
+            if (runner.Type == WineRunnerType.Wine)
+            {
+                InstalledWineRunners.Add(runner);
+            }
+            else
+            {
+                InstalledProtonRunners.Add(runner);
+            }
+        }
+        
+        // Set selected runners based on current paths
+        var settings = _settingsService.Settings;
+        
+        if (!string.IsNullOrEmpty(settings.WineExecutablePath))
+        {
+            SelectedGlobalWineRunner = InstalledWineRunners.FirstOrDefault(r => 
+                settings.WineExecutablePath.StartsWith(r.InstallPath, StringComparison.OrdinalIgnoreCase) ||
+                r.ExecutablePath.Equals(settings.WineExecutablePath, StringComparison.OrdinalIgnoreCase));
+        }
+        
+        if (!string.IsNullOrEmpty(settings.ProtonPath))
+        {
+            SelectedGlobalProtonRunner = InstalledProtonRunners.FirstOrDefault(r => 
+                settings.ProtonPath.StartsWith(r.InstallPath, StringComparison.OrdinalIgnoreCase) ||
+                r.InstallPath.Equals(settings.ProtonPath, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+    
+    partial void OnSelectedGlobalWineRunnerChanged(InstalledRunner? value)
+    {
+        if (value != null)
+        {
+            WineExecutablePath = value.ExecutablePath;
+        }
+    }
+    
+    partial void OnSelectedGlobalProtonRunnerChanged(InstalledRunner? value)
+    {
+        if (value != null)
+        {
+            ProtonPath = value.InstallPath;
         }
     }
 

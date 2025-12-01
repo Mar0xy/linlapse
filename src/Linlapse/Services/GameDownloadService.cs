@@ -7,7 +7,9 @@ using Serilog;
 namespace Linlapse.Services;
 
 /// <summary>
-/// Service for downloading and installing games from official sources
+/// Service for downloading and installing games from official sources.
+/// Uses Sophon downloads when available for supported games (Genshin Impact, ZZZ),
+/// otherwise falls back to traditional archive-based downloads.
 /// </summary>
 public partial class GameDownloadService : IDisposable
 {
@@ -16,6 +18,7 @@ public partial class GameDownloadService : IDisposable
     private readonly DownloadService _downloadService;
     private readonly InstallationService _installationService;
     private readonly SettingsService _settingsService;
+    private SophonDownloadService? _sophonDownloadService;
 
     // Regex for detecting multi-part archive extensions (e.g., .001, .002, .0001, etc.)
     [GeneratedRegex(@"^\.(\d+)$", RegexOptions.Compiled)]
@@ -38,6 +41,14 @@ public partial class GameDownloadService : IDisposable
         _settingsService = settingsService;
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
+    }
+    
+    /// <summary>
+    /// Gets or creates the SophonDownloadService instance
+    /// </summary>
+    private SophonDownloadService GetSophonService()
+    {
+        return _sophonDownloadService ??= new SophonDownloadService(_settingsService, _gameService);
     }
 
     /// <summary>
@@ -81,7 +92,9 @@ public partial class GameDownloadService : IDisposable
     }
 
     /// <summary>
-    /// Download and install a game
+    /// Download and install a game. Uses Sophon for supported games (Genshin Impact, ZZZ)
+    /// for faster, more efficient chunk-based downloads. Falls back to traditional archive
+    /// downloads for other games.
     /// </summary>
     public async Task<bool> DownloadAndInstallGameAsync(
         string gameId,
@@ -100,7 +113,84 @@ public partial class GameDownloadService : IDisposable
         installPath ??= Path.Combine(
             _settingsService.Settings.DefaultGameInstallPath ??
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games"),
-            game.Name);
+            GameService.GetInstallFolderName(game));
+
+        // Try Sophon download for supported games (Genshin Impact, ZZZ)
+        if (SophonDownloadService.SupportsSophon(game))
+        {
+            Log.Information("Attempting Sophon download for {GameId}", gameId);
+            try
+            {
+                var sophonService = GetSophonService();
+                
+                // Wrap Sophon progress into GameDownloadProgress
+                var sophonProgress = new Progress<SophonDownloadProgress>(sp =>
+                {
+                    var gameProgress = new GameDownloadProgress
+                    {
+                        GameId = sp.GameId,
+                        State = sp.State switch
+                        {
+                            SophonDownloadState.FetchingInfo => GameDownloadState.FetchingInfo,
+                            SophonDownloadState.Downloading => GameDownloadState.Downloading,
+                            SophonDownloadState.Completed => GameDownloadState.Completed,
+                            SophonDownloadState.Failed => GameDownloadState.Failed,
+                            SophonDownloadState.Cancelled => GameDownloadState.Cancelled,
+                            _ => GameDownloadState.Downloading
+                        },
+                        TotalSize = sp.TotalSize,
+                        DownloadedBytes = sp.DownloadedBytes,
+                        TotalFiles = sp.TotalFiles,
+                        ExtractedFiles = sp.ProcessedFiles,
+                        CurrentFile = sp.CurrentFile,
+                        ErrorMessage = sp.ErrorMessage,
+                        SpeedBytesPerSecond = sp.SpeedBytesPerSecond,
+                        EstimatedTimeRemaining = sp.EstimatedTimeRemaining
+                    };
+                    progress?.Report(gameProgress);
+                    DownloadProgressChanged?.Invoke(this, gameProgress);
+                });
+                
+                var sophonResult = await sophonService.DownloadAndInstallGameAsync(
+                    gameId,
+                    installPath,
+                    sophonProgress,
+                    cancellationToken);
+                
+                if (sophonResult)
+                {
+                    Log.Information("Sophon download completed successfully for {GameId}", gameId);
+                    GameInstallCompleted?.Invoke(this, gameId);
+                    return true;
+                }
+                
+                Log.Warning("Sophon download returned false for {GameId}, falling back to traditional download", gameId);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Sophon download failed for {GameId}, falling back to traditional download", gameId);
+            }
+        }
+        
+        // Fall back to traditional archive-based download
+        return await DownloadAndInstallGameTraditionalAsync(gameId, installPath, progress, cancellationToken);
+    }
+    
+    /// <summary>
+    /// Traditional download and install using archive files
+    /// </summary>
+    private async Task<bool> DownloadAndInstallGameTraditionalAsync(
+        string gameId,
+        string installPath,
+        IProgress<GameDownloadProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var game = _gameService.GetGame(gameId);
+        if (game == null)
+        {
+            Log.Error("Game not found: {GameId}", gameId);
+            return false;
+        }
 
         var downloadProgress = new GameDownloadProgress
         {
@@ -689,6 +779,7 @@ public partial class GameDownloadService : IDisposable
     public void Dispose()
     {
         _httpClient.Dispose();
+        _sophonDownloadService?.Dispose();
     }
 }
 

@@ -686,15 +686,16 @@ public class WineRunnerService
     {
         Directory.CreateDirectory(destDir);
         
-        // First, try using native mv command which handles symlinks correctly
+        // First, try using native cp command with -a flag which preserves symlinks correctly
+        // Using cp -a is more reliable than mv for handling symlinks
         try
         {
             var process = new System.Diagnostics.Process
             {
                 StartInfo = new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = "sh",
-                    Arguments = $"-c \"mv -f \\\"{sourceDir}\\\"/* \\\"{destDir}\\\"/\"",
+                    FileName = "cp",
+                    Arguments = $"-a \"{sourceDir}/.\" \"{destDir}/\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -703,21 +704,23 @@ public class WineRunnerService
             };
             
             process.Start();
-            process.WaitForExit(60000);
+            var stderr = process.StandardError.ReadToEnd();
+            process.WaitForExit(120000); // 2 minute timeout for large directories
             
             if (process.ExitCode == 0)
             {
+                Log.Information("Successfully copied directory with cp -a");
                 return;
             }
             
-            Log.Warning("Native mv failed, falling back to manual move");
+            Log.Warning("Native cp -a failed (exit code {ExitCode}): {Error}, falling back to manual copy", process.ExitCode, stderr);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Native mv not available, using manual move");
+            Log.Warning(ex, "Native cp not available, using manual copy");
         }
         
-        // Fallback: manual move with symlink handling
+        // Fallback: manual move with symlink handling using Linux-specific detection
         foreach (var entry in Directory.GetFileSystemEntries(sourceDir))
         {
             var name = Path.GetFileName(entry);
@@ -725,10 +728,8 @@ public class WineRunnerService
             
             try
             {
-                var fileInfo = new FileInfo(entry);
-                
-                // Check if it's a symlink
-                if (fileInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                // Use Linux-specific symlink detection (more reliable than FileAttributes)
+                if (IsSymlink(entry))
                 {
                     // It's a symlink - recreate it at the destination
                     if (File.Exists(destPath) || Directory.Exists(destPath))
@@ -742,6 +743,11 @@ public class WineRunnerService
                     if (!string.IsNullOrEmpty(target))
                     {
                         CreateSymlink(target, destPath);
+                        Log.Debug("Recreated symlink: {Link} -> {Target}", destPath, target);
+                    }
+                    else
+                    {
+                        Log.Warning("Could not read symlink target for {Entry}", entry);
                     }
                 }
                 else if (Directory.Exists(entry))
@@ -754,12 +760,54 @@ public class WineRunnerService
                     // It's a regular file
                     if (File.Exists(destPath))
                         File.Delete(destPath);
-                    File.Move(entry, destPath);
+                    File.Copy(entry, destPath, true);
                 }
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to move {Entry}, skipping", entry);
+                Log.Warning(ex, "Failed to copy {Entry}, skipping", entry);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Check if a path is a symbolic link (Linux-specific)
+    /// </summary>
+    private static bool IsSymlink(string path)
+    {
+        try
+        {
+            // Use stat -c %F to get file type (more reliable on Linux)
+            var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "stat",
+                    Arguments = $"-c %F \"{path}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+            
+            process.Start();
+            var output = process.StandardOutput.ReadToEnd().Trim().ToLowerInvariant();
+            process.WaitForExit(5000);
+            
+            return process.ExitCode == 0 && output.Contains("symbolic link");
+        }
+        catch
+        {
+            // Fallback: try using FileInfo
+            try
+            {
+                var info = new FileInfo(path);
+                return info.Attributes.HasFlag(FileAttributes.ReparsePoint);
+            }
+            catch
+            {
+                return false;
             }
         }
     }

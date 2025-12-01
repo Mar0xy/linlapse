@@ -47,6 +47,25 @@ jobs:
           -p:IncludeNativeLibrariesForSelfExtract=true \
           -o ./publish/linux-x64
 
+    - name: Copy libzstd native libraries
+      run: |
+        # Create the Lib/linux-x64 directory
+        mkdir -p ./publish/linux-x64/Lib/linux-x64
+        
+        # Copy libzstd libraries from NuGet package
+        NUGET_PACKAGES="${HOME}/.nuget/packages"
+        cp "${NUGET_PACKAGES}/hi3helper.zstdnet/1.6.5/build/Lib/linux-x64/libzstd.so" ./publish/linux-x64/Lib/linux-x64/
+        cp "${NUGET_PACKAGES}/hi3helper.zstdnet/1.6.5/build/Lib/linux-x64/libzstd-bmi2.so" ./publish/linux-x64/Lib/linux-x64/
+        
+        echo "Copied libzstd libraries:"
+        ls -la ./publish/linux-x64/Lib/linux-x64/
+          
+    - name: Clean up Windows DLLs
+      run: |
+        # Remove Windows DLLs that were copied by Hi3Helper.ZstdNet
+        rm -rf ./publish/linux-x64/Lib/win-*
+        echo "Removed Windows DLLs"
+
     - name: Set executable permissions
       run: chmod +x ./publish/linux-x64/Linlapse
 
