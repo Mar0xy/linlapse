@@ -512,6 +512,9 @@ public class SophonDownloadService : IDisposable
             
             long totalDownloaded = 0;
             int filesProcessed = 0;
+            var startTime = DateTime.UtcNow;
+            var lastSpeedCalcTime = DateTime.UtcNow;
+            long lastSpeedCalcBytes = 0;
             
             var parallelOptions = new ParallelOptions
             {
@@ -554,6 +557,25 @@ public class SophonDownloadService : IDisposable
                         // Progress callback for bytes written
                         Interlocked.Add(ref totalDownloaded, read);
                         downloadProgress.DownloadedBytes = totalDownloaded;
+                        
+                        // Calculate speed every second to smooth out fluctuations
+                        var now = DateTime.UtcNow;
+                        var timeSinceLastCalc = (now - lastSpeedCalcTime).TotalSeconds;
+                        if (timeSinceLastCalc >= 1.0)
+                        {
+                            var bytesSinceLastCalc = totalDownloaded - lastSpeedCalcBytes;
+                            downloadProgress.SpeedBytesPerSecond = bytesSinceLastCalc / timeSinceLastCalc;
+                            lastSpeedCalcTime = now;
+                            lastSpeedCalcBytes = totalDownloaded;
+                            
+                            // Calculate estimated time remaining
+                            if (downloadProgress.SpeedBytesPerSecond > 0)
+                            {
+                                var remainingBytes = downloadInfo.TotalSize - totalDownloaded;
+                                downloadProgress.EstimatedTimeRemaining = TimeSpan.FromSeconds(remainingBytes / downloadProgress.SpeedBytesPerSecond);
+                            }
+                        }
+                        
                         progress?.Report(downloadProgress);
                         DownloadProgressChanged?.Invoke(this, downloadProgress);
                     },
@@ -659,6 +681,9 @@ public class SophonDownloadService : IDisposable
             
             long totalDownloaded = 0;
             int filesProcessed = 0;
+            var startTime = DateTime.UtcNow;
+            var lastSpeedCalcTime = DateTime.UtcNow;
+            long lastSpeedCalcBytes = 0;
             
             var parallelOptions = new ParallelOptions
             {
@@ -698,6 +723,25 @@ public class SophonDownloadService : IDisposable
                     {
                         Interlocked.Add(ref totalDownloaded, read);
                         downloadProgress.DownloadedBytes = totalDownloaded;
+                        
+                        // Calculate speed every second to smooth out fluctuations
+                        var now = DateTime.UtcNow;
+                        var timeSinceLastCalc = (now - lastSpeedCalcTime).TotalSeconds;
+                        if (timeSinceLastCalc >= 1.0)
+                        {
+                            var bytesSinceLastCalc = totalDownloaded - lastSpeedCalcBytes;
+                            downloadProgress.SpeedBytesPerSecond = bytesSinceLastCalc / timeSinceLastCalc;
+                            lastSpeedCalcTime = now;
+                            lastSpeedCalcBytes = totalDownloaded;
+                            
+                            // Calculate estimated time remaining
+                            if (downloadProgress.SpeedBytesPerSecond > 0)
+                            {
+                                var remainingBytes = downloadInfo.TotalSize - totalDownloaded;
+                                downloadProgress.EstimatedTimeRemaining = TimeSpan.FromSeconds(remainingBytes / downloadProgress.SpeedBytesPerSecond);
+                            }
+                        }
+                        
                         progress?.Report(downloadProgress);
                         DownloadProgressChanged?.Invoke(this, downloadProgress);
                     },
@@ -779,6 +823,8 @@ public class SophonDownloadProgress
     public double PercentComplete => TotalSize > 0 ? (double)DownloadedBytes / TotalSize * 100 : 0;
     public bool IsVoicePack { get; set; }
     public VoiceLanguage? VoiceLanguage { get; set; }
+    public double SpeedBytesPerSecond { get; set; }
+    public TimeSpan EstimatedTimeRemaining { get; set; }
 }
 
 /// <summary>

@@ -143,7 +143,9 @@ public partial class GameDownloadService : IDisposable
                         TotalFiles = sp.TotalFiles,
                         ExtractedFiles = sp.ProcessedFiles,
                         CurrentFile = sp.CurrentFile,
-                        ErrorMessage = sp.ErrorMessage
+                        ErrorMessage = sp.ErrorMessage,
+                        SpeedBytesPerSecond = sp.SpeedBytesPerSecond,
+                        EstimatedTimeRemaining = sp.EstimatedTimeRemaining
                     };
                     progress?.Report(gameProgress);
                     DownloadProgressChanged?.Invoke(this, gameProgress);
