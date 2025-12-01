@@ -840,33 +840,87 @@
                                     <TextBlock Text="Use custom runner for this game" Foreground="White"/>
                                 </CheckBox>
                                 
-                                <StackPanel Spacing="8" IsEnabled="{Binding UseCustomRunner}">
+                                <StackPanel Spacing="12" IsEnabled="{Binding UseCustomRunner}">
                                     <CheckBox IsChecked="{Binding UseProton}"
                                               Foreground="White">
                                         <TextBlock Text="Use Proton instead of Wine" Foreground="White"/>
                                     </CheckBox>
                                     
-                                    <TextBlock Text="Custom Wine executable path:" 
-                                               Foreground="#a1a1aa" 
-                                               FontSize="12"
-                                               Margin="0,8,0,0"/>
-                                    <TextBox Text="{Binding CustomWineExecutablePath}"
-                                             Watermark="e.g., /path/to/wine64"
-                                             Background="#3f3f46"
-                                             Foreground="White"
-                                             BorderBrush="#52525b"
-                                             Padding="12,8"/>
+                                    <!-- Wine Runner Dropdown -->
+                                    <StackPanel Spacing="4" IsVisible="{Binding !UseProton}">
+                                        <TextBlock Text="Select Wine Runner:" 
+                                                   Foreground="#a1a1aa" 
+                                                   FontSize="12"/>
+                                        <ComboBox ItemsSource="{Binding InstalledWineRunners}"
+                                                  SelectedItem="{Binding SelectedWineRunner}"
+                                                  HorizontalAlignment="Stretch"
+                                                  Background="#3f3f46"
+                                                  Foreground="White"
+                                                  BorderBrush="#52525b"
+                                                  Padding="8">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="{Binding Name}" Foreground="White"/>
+                                                        <TextBlock Text="{Binding Version, StringFormat='(v{0})'}" 
+                                                                   Foreground="#71717a" 
+                                                                   FontSize="11"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <TextBlock Text="Or enter custom path:" 
+                                                   Foreground="#71717a" 
+                                                   FontSize="11"
+                                                   Margin="0,8,0,0"/>
+                                        <TextBox Text="{Binding CustomWineExecutablePath}"
+                                                 Watermark="e.g., /path/to/wine64"
+                                                 Background="#3f3f46"
+                                                 Foreground="White"
+                                                 BorderBrush="#52525b"
+                                                 Padding="12,8"/>
+                                    </StackPanel>
                                     
-                                    <TextBlock Text="Custom Proton path:" 
-                                               Foreground="#a1a1aa" 
-                                               FontSize="12"
+                                    <!-- Proton Runner Dropdown -->
+                                    <StackPanel Spacing="4" IsVisible="{Binding UseProton}">
+                                        <TextBlock Text="Select Proton Runner:" 
+                                                   Foreground="#a1a1aa" 
+                                                   FontSize="12"/>
+                                        <ComboBox ItemsSource="{Binding InstalledProtonRunners}"
+                                                  SelectedItem="{Binding SelectedProtonRunner}"
+                                                  HorizontalAlignment="Stretch"
+                                                  Background="#3f3f46"
+                                                  Foreground="White"
+                                                  BorderBrush="#52525b"
+                                                  Padding="8">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="{Binding Name}" Foreground="White"/>
+                                                        <TextBlock Text="{Binding Version, StringFormat='(v{0})'}" 
+                                                                   Foreground="#71717a" 
+                                                                   FontSize="11"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <TextBlock Text="Or enter custom path:" 
+                                                   Foreground="#71717a" 
+                                                   FontSize="11"
+                                                   Margin="0,8,0,0"/>
+                                        <TextBox Text="{Binding CustomProtonPath}"
+                                                 Watermark="e.g., /path/to/proton-ge"
+                                                 Background="#3f3f46"
+                                                 Foreground="White"
+                                                 BorderBrush="#52525b"
+                                                 Padding="12,8"/>
+                                    </StackPanel>
+                                    
+                                    <TextBlock Text="💡 Download runners via the wine bottle button or install them to Steam's compatibilitytools.d folder."
+                                               Foreground="#71717a"
+                                               FontSize="11"
+                                               TextWrapping="Wrap"
                                                Margin="0,8,0,0"/>
-                                    <TextBox Text="{Binding CustomProtonPath}"
-                                             Watermark="e.g., /path/to/proton-ge"
-                                             Background="#3f3f46"
-                                             Foreground="White"
-                                             BorderBrush="#52525b"
-                                             Padding="12,8"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
