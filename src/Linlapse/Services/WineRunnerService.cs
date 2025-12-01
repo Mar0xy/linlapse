@@ -44,7 +44,7 @@ public class WineRunnerService
             Description = "Wine with additional patches",
             Type = WineRunnerType.Wine,
             DownloadUrl = "https://github.com/NelloKudo/Wine-Builds/releases/download/wine-tkg-aagl-v10.15-7/spritz-wine-tkg-staging-wow64-10.15-7-x86_64.tar.xz",
-            Md5Checksum = null // Will be computed on first download if not provided
+            Md5Checksum = "fe2f5559dcb832bab7c9044a88973267"
         },
         // Proton runners
         new WineRunner
@@ -55,17 +55,17 @@ public class WineRunnerService
             Description = "CachyOS optimized Proton build with performance improvements",
             Type = WineRunnerType.Proton,
             DownloadUrl = "https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-10.0-20251126-slr/proton-cachyos-10.0-20251126-slr-x86_64.tar.xz",
-            Md5Checksum = null // Will be computed on first download if not provided
+            Md5Checksum = "a04d7e99dd1bf577605c8ca21e3b9348"
         },
         new WineRunner
         {
             Id = "proton-dw",
             Name = "dwproton",
-            Version = "10.0-8",
+            Version = "10.0-9",
             Description = "Special proton made by dawn winery",
             Type = WineRunnerType.Proton,
-            DownloadUrl = "https://dawn.wine/dawn-winery/dwproton/releases/download/dwproton-10.0-8/dwproton-10.0-8-x86_64.tar.xz",
-            Md5Checksum = null // Will be computed on first download if not provided
+            DownloadUrl = "https://dawn.wine/dawn-winery/dwproton/releases/download/dwproton-10.0-9/dwproton-10.0-9-x86_64.tar.xz",
+            Md5Checksum = "e2bc79e8fc669fa4dc1027feeae25b7b"
         }
     };
 
