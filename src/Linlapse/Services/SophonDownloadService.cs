@@ -35,6 +35,16 @@ public class SophonDownloadService : IDisposable
     private const string SophonChunkApiGlobal = "https://sg-public-api.hoyoverse.com/downloader/sophon_chunk/api/getBuild";
     private const string SophonChunkApiChina = "https://api-takumi.mihoyo.com/downloader/sophon_chunk/api/getBuild";
     
+    // Voice pack language matching fields used by Sophon
+    private static readonly Dictionary<VoiceLanguage, string> VoiceLanguageMatchingFields = new()
+    {
+        { VoiceLanguage.English, "en-us" },
+        { VoiceLanguage.Japanese, "ja-jp" },
+        { VoiceLanguage.Korean, "ko-kr" },
+        { VoiceLanguage.ChineseSimplified, "zh-cn" },
+        { VoiceLanguage.ChineseTraditional, "zh-tw" }
+    };
+    
     public event EventHandler<SophonDownloadProgress>? DownloadProgressChanged;
     public event EventHandler<string>? DownloadCompleted;
     public event EventHandler<(string GameId, Exception Error)>? DownloadFailed;
@@ -42,7 +52,23 @@ public class SophonDownloadService : IDisposable
     // Configuration constants
     private const int DefaultMaxConnectionsPerServer = 32;
     private const int DefaultMaxParallelChunks = 8;
-    private const string DefaultMatchingField = "game";
+    private const string GameMatchingField = "game";
+    
+    /// <summary>
+    /// Get the matching field for a voice language
+    /// </summary>
+    public static string? GetVoiceLanguageMatchingField(VoiceLanguage language)
+    {
+        return VoiceLanguageMatchingFields.TryGetValue(language, out var field) ? field : null;
+    }
+    
+    /// <summary>
+    /// Get all supported voice languages
+    /// </summary>
+    public static IEnumerable<VoiceLanguage> GetSupportedVoiceLanguages()
+    {
+        return VoiceLanguageMatchingFields.Keys;
+    }
     
     public SophonDownloadService(SettingsService settingsService, GameService gameService)
     {
@@ -245,9 +271,113 @@ public class SophonDownloadService : IDisposable
     }
     
     /// <summary>
-    /// Get Sophon download information for a game
+    /// Get the install path for voice packs (same directory as the game)
+    /// </summary>
+    private string GetVoicePackInstallPath(GameInfo game)
+    {
+        // Voice packs should be installed in the same directory as the game
+        if (!string.IsNullOrEmpty(game.InstallPath))
+        {
+            return game.InstallPath;
+        }
+        
+        // Fallback to default path if game is not yet installed
+        var defaultBasePath = _settingsService.Settings.DefaultGameInstallPath 
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games");
+        
+        return Path.Combine(defaultBasePath, GameService.GetInstallFolderName(game));
+    }
+    
+    /// <summary>
+    /// Get Sophon download information for a game (base game files)
     /// </summary>
     public async Task<SophonDownloadInfo?> GetSophonDownloadInfoAsync(string gameId, CancellationToken cancellationToken = default)
+    {
+        return await GetSophonDownloadInfoAsync(gameId, GameMatchingField, cancellationToken);
+    }
+    
+    /// <summary>
+    /// Get Sophon download information for a voice pack
+    /// </summary>
+    public async Task<SophonDownloadInfo?> GetSophonVoicePackDownloadInfoAsync(string gameId, VoiceLanguage language, CancellationToken cancellationToken = default)
+    {
+        var matchingField = GetVoiceLanguageMatchingField(language);
+        if (matchingField == null)
+        {
+            Log.Warning("Unsupported voice language: {Language}", language);
+            return null;
+        }
+        
+        var info = await GetSophonDownloadInfoAsync(gameId, matchingField, cancellationToken);
+        if (info != null)
+        {
+            info.VoiceLanguage = language;
+            info.IsVoicePack = true;
+        }
+        return info;
+    }
+    
+    /// <summary>
+    /// Get all available voice pack languages for a game
+    /// </summary>
+    public async Task<List<VoiceLanguage>> GetAvailableVoicePacksAsync(string gameId, CancellationToken cancellationToken = default)
+    {
+        var availableLanguages = new List<VoiceLanguage>();
+        
+        var game = _gameService.GetGame(gameId);
+        if (game == null || !SupportsSophon(game))
+        {
+            return availableLanguages;
+        }
+        
+        try
+        {
+            var branchInfo = await GetBranchInfoAsync(game, cancellationToken);
+            if (branchInfo == null)
+            {
+                return availableLanguages;
+            }
+            
+            var sophonUrl = BuildSophonGetBuildUrl(game, branchInfo);
+            
+            // Try each voice language to see which are available
+            foreach (var language in GetSupportedVoiceLanguages())
+            {
+                var matchingField = GetVoiceLanguageMatchingField(language);
+                if (matchingField == null) continue;
+                
+                try
+                {
+                    var manifestPair = await SophonManifest.CreateSophonChunkManifestInfoPair(
+                        _httpClient,
+                        sophonUrl,
+                        matchingField,
+                        cancellationToken);
+                    
+                    if (manifestPair.IsFound)
+                    {
+                        availableLanguages.Add(language);
+                        Log.Debug("Voice pack available for {GameId}: {Language}", gameId, language);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug(ex, "Voice pack not available for {GameId}: {Language}", gameId, language);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get available voice packs for {GameId}", gameId);
+        }
+        
+        return availableLanguages;
+    }
+    
+    /// <summary>
+    /// Get Sophon download information with specific matching field
+    /// </summary>
+    private async Task<SophonDownloadInfo?> GetSophonDownloadInfoAsync(string gameId, string matchingField, CancellationToken cancellationToken)
     {
         var game = _gameService.GetGame(gameId);
         if (game == null)
@@ -274,17 +404,17 @@ public class SophonDownloadService : IDisposable
             
             // Step 2: Build the Sophon getBuild URL and fetch manifest
             var sophonUrl = BuildSophonGetBuildUrl(game, branchInfo);
-            Log.Information("Fetching Sophon manifest for {GameId} from {Url}", gameId, sophonUrl);
+            Log.Information("Fetching Sophon manifest for {GameId} (field: {Field}) from {Url}", gameId, matchingField, sophonUrl);
             
             var manifestPair = await SophonManifest.CreateSophonChunkManifestInfoPair(
                 _httpClient,
                 sophonUrl,
-                DefaultMatchingField,
+                matchingField,
                 cancellationToken);
             
             if (!manifestPair.IsFound)
             {
-                Log.Warning("Sophon manifest not found for {GameId}: {Message}", gameId, manifestPair.ReturnMessage);
+                Log.Warning("Sophon manifest not found for {GameId} (field: {Field}): {Message}", gameId, matchingField, manifestPair.ReturnMessage);
                 return null;
             }
             
@@ -298,12 +428,13 @@ public class SophonDownloadService : IDisposable
                 FileCount = chunksInfo.FilesCount,
                 ChunkCount = chunksInfo.ChunksCount,
                 ManifestPair = manifestPair,
-                IsAvailable = true
+                IsAvailable = true,
+                MatchingField = matchingField
             };
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get Sophon download info for {GameId}", gameId);
+            Log.Error(ex, "Failed to get Sophon download info for {GameId} (field: {Field})", gameId, matchingField);
             return null;
         }
     }
@@ -456,6 +587,143 @@ public class SophonDownloadService : IDisposable
         }
     }
     
+    /// <summary>
+    /// Download and install a voice pack using Sophon
+    /// </summary>
+    public async Task<bool> DownloadAndInstallVoicePackAsync(
+        string gameId,
+        VoiceLanguage language,
+        string? installPath = null,
+        IProgress<SophonDownloadProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var game = _gameService.GetGame(gameId);
+        if (game == null)
+        {
+            Log.Error("Game not found: {GameId}", gameId);
+            return false;
+        }
+        
+        if (!SupportsSophon(game))
+        {
+            Log.Warning("Game {GameId} does not support Sophon downloads", gameId);
+            return false;
+        }
+        
+        // Use default install path if not specified (voice packs go in the same directory as the game)
+        installPath ??= GetVoicePackInstallPath(game);
+        
+        var downloadProgress = new SophonDownloadProgress
+        {
+            GameId = gameId,
+            State = SophonDownloadState.FetchingInfo,
+            VoiceLanguage = language,
+            IsVoicePack = true
+        };
+        
+        try
+        {
+            progress?.Report(downloadProgress);
+            
+            // Get Sophon voice pack download info
+            var downloadInfo = await GetSophonVoicePackDownloadInfoAsync(gameId, language, cancellationToken);
+            if (downloadInfo == null || !downloadInfo.IsAvailable)
+            {
+                Log.Warning("Sophon voice pack download not available for {GameId} ({Language})", gameId, language);
+                return false;
+            }
+            
+            downloadProgress.TotalSize = downloadInfo.TotalSize;
+            downloadProgress.TotalFiles = downloadInfo.FileCount;
+            
+            // Create install directory
+            Directory.CreateDirectory(installPath);
+            
+            downloadProgress.State = SophonDownloadState.Downloading;
+            progress?.Report(downloadProgress);
+            DownloadProgressChanged?.Invoke(this, downloadProgress);
+            
+            Log.Information("Starting Sophon voice pack download for {GameId} ({Language}): {FileCount} files, {TotalSize} bytes", 
+                gameId, language, downloadInfo.FileCount, downloadInfo.TotalSize);
+            
+            long totalDownloaded = 0;
+            int filesProcessed = 0;
+            
+            var parallelOptions = new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = Math.Min(DefaultMaxParallelChunks, Environment.ProcessorCount)
+            };
+            
+            // Enumerate and download voice pack assets
+            await foreach (var asset in SophonManifest.EnumerateAsync(
+                _httpClient,
+                downloadInfo.ManifestPair,
+                null,
+                cancellationToken))
+            {
+                if (asset.IsDirectory)
+                {
+                    var dirPath = Path.Combine(installPath, asset.AssetName);
+                    Directory.CreateDirectory(dirPath);
+                    continue;
+                }
+                
+                var outputPath = Path.Combine(installPath, asset.AssetName);
+                var outputDir = Path.GetDirectoryName(outputPath);
+                if (!string.IsNullOrEmpty(outputDir))
+                {
+                    Directory.CreateDirectory(outputDir);
+                }
+                
+                downloadProgress.CurrentFile = asset.AssetName;
+                progress?.Report(downloadProgress);
+                
+                await asset.WriteToStreamAsync(
+                    _httpClient,
+                    () => new FileStream(outputPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite),
+                    parallelOptions,
+                    read =>
+                    {
+                        Interlocked.Add(ref totalDownloaded, read);
+                        downloadProgress.DownloadedBytes = totalDownloaded;
+                        progress?.Report(downloadProgress);
+                        DownloadProgressChanged?.Invoke(this, downloadProgress);
+                    },
+                    (_, _) =>
+                    {
+                        Interlocked.Increment(ref filesProcessed);
+                        downloadProgress.ProcessedFiles = filesProcessed;
+                        Log.Debug("Downloaded voice pack file: {FileName} ({Processed}/{Total})", 
+                            asset.AssetName, filesProcessed, downloadInfo.FileCount);
+                    });
+            }
+            
+            downloadProgress.State = SophonDownloadState.Completed;
+            progress?.Report(downloadProgress);
+            
+            Log.Information("Sophon voice pack download completed for {GameId} ({Language}): {Files} files, {Bytes} bytes", 
+                gameId, language, filesProcessed, totalDownloaded);
+            
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Information("Sophon voice pack download cancelled for {GameId} ({Language})", gameId, language);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            downloadProgress.State = SophonDownloadState.Failed;
+            downloadProgress.ErrorMessage = ex.Message;
+            progress?.Report(downloadProgress);
+            
+            Log.Error(ex, "Sophon voice pack download failed for {GameId} ({Language})", gameId, language);
+            DownloadFailed?.Invoke(this, (gameId, ex));
+            return false;
+        }
+    }
+    
     public void Dispose()
     {
         _httpClient.Dispose();
@@ -467,6 +735,11 @@ public class SophonDownloadService : IDisposable
 /// </summary>
 public class SophonDownloadInfo
 {
+    /// <summary>
+    /// Default matching field for game files (corresponds to SophonDownloadService.GameMatchingField)
+    /// </summary>
+    public const string DefaultMatchingField = "game";
+    
     public string GameId { get; set; } = string.Empty;
     public long TotalSize { get; set; }
     public long TotalCompressedSize { get; set; }
@@ -474,6 +747,9 @@ public class SophonDownloadInfo
     public int ChunkCount { get; set; }
     public bool IsAvailable { get; set; }
     public SophonChunkManifestInfoPair? ManifestPair { get; set; }
+    public string MatchingField { get; set; } = DefaultMatchingField;
+    public bool IsVoicePack { get; set; }
+    public VoiceLanguage? VoiceLanguage { get; set; }
 }
 
 /// <summary>
@@ -490,6 +766,8 @@ public class SophonDownloadProgress
     public string CurrentFile { get; set; } = string.Empty;
     public string? ErrorMessage { get; set; }
     public double PercentComplete => TotalSize > 0 ? (double)DownloadedBytes / TotalSize * 100 : 0;
+    public bool IsVoicePack { get; set; }
+    public VoiceLanguage? VoiceLanguage { get; set; }
 }
 
 /// <summary>
@@ -503,6 +781,18 @@ public enum SophonDownloadState
     Completed,
     Failed,
     Cancelled
+}
+
+/// <summary>
+/// Voice pack languages supported by Sophon
+/// </summary>
+public enum VoiceLanguage
+{
+    English,
+    Japanese,
+    Korean,
+    ChineseSimplified,
+    ChineseTraditional
 }
 
 /// <summary>
