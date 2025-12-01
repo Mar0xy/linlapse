@@ -680,24 +680,148 @@ public class WineRunnerService
     }
     
     /// <summary>
-    /// Recursively move directory contents
+    /// Recursively move directory contents, handling symlinks properly
     /// </summary>
     private static void MoveDirectoryContents(string sourceDir, string destDir)
     {
         Directory.CreateDirectory(destDir);
         
-        foreach (var file in Directory.GetFiles(sourceDir))
+        // First, try using native mv command which handles symlinks correctly
+        try
         {
-            var destFile = Path.Combine(destDir, Path.GetFileName(file));
-            if (File.Exists(destFile))
-                File.Delete(destFile);
-            File.Move(file, destFile);
+            var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "sh",
+                    Arguments = $"-c \"mv -f \\\"{sourceDir}\\\"/* \\\"{destDir}\\\"/\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+            
+            process.Start();
+            process.WaitForExit(60000);
+            
+            if (process.ExitCode == 0)
+            {
+                return;
+            }
+            
+            Log.Warning("Native mv failed, falling back to manual move");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Native mv not available, using manual move");
         }
         
-        foreach (var dir in Directory.GetDirectories(sourceDir))
+        // Fallback: manual move with symlink handling
+        foreach (var entry in Directory.GetFileSystemEntries(sourceDir))
         {
-            var destSubDir = Path.Combine(destDir, Path.GetFileName(dir));
-            MoveDirectoryContents(dir, destSubDir);
+            var name = Path.GetFileName(entry);
+            var destPath = Path.Combine(destDir, name);
+            
+            try
+            {
+                var fileInfo = new FileInfo(entry);
+                
+                // Check if it's a symlink
+                if (fileInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                {
+                    // It's a symlink - recreate it at the destination
+                    if (File.Exists(destPath) || Directory.Exists(destPath))
+                    {
+                        try { File.Delete(destPath); } catch { }
+                        try { Directory.Delete(destPath, true); } catch { }
+                    }
+                    
+                    // Read symlink target and recreate
+                    var target = ReadSymlinkTarget(entry);
+                    if (!string.IsNullOrEmpty(target))
+                    {
+                        CreateSymlink(target, destPath);
+                    }
+                }
+                else if (Directory.Exists(entry))
+                {
+                    // It's a directory - recurse
+                    MoveDirectoryContents(entry, destPath);
+                }
+                else if (File.Exists(entry))
+                {
+                    // It's a regular file
+                    if (File.Exists(destPath))
+                        File.Delete(destPath);
+                    File.Move(entry, destPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to move {Entry}, skipping", entry);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Read the target of a symlink
+    /// </summary>
+    private static string? ReadSymlinkTarget(string path)
+    {
+        try
+        {
+            var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "readlink",
+                    Arguments = $"\"{path}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+            
+            process.Start();
+            var target = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit(5000);
+            
+            return process.ExitCode == 0 ? target : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+    
+    /// <summary>
+    /// Create a symlink
+    /// </summary>
+    private static void CreateSymlink(string target, string linkPath)
+    {
+        try
+        {
+            var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "ln",
+                    Arguments = $"-sf \"{target}\" \"{linkPath}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+            
+            process.Start();
+            process.WaitForExit(5000);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to create symlink from {Target} to {Link}", target, linkPath);
         }
     }
 
