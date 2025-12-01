@@ -50,6 +50,14 @@ public partial class GameDownloadService : IDisposable
     {
         return _sophonDownloadService ??= new SophonDownloadService(_settingsService, _gameService);
     }
+    
+    /// <summary>
+    /// Gets the install folder name for a game, appending _cn suffix for China region
+    /// </summary>
+    private static string GetInstallFolderName(GameInfo game)
+    {
+        return game.Region == GameRegion.China ? $"{game.Name}_cn" : game.Name;
+    }
 
     /// <summary>
     /// Get download information for a game
@@ -113,7 +121,7 @@ public partial class GameDownloadService : IDisposable
         installPath ??= Path.Combine(
             _settingsService.Settings.DefaultGameInstallPath ??
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games"),
-            game.Name);
+            GetInstallFolderName(game));
 
         // Try Sophon download for supported games (Genshin Impact, ZZZ)
         if (SophonDownloadService.SupportsSophon(game))

@@ -317,12 +317,17 @@ public class GameService
                     // Check for known game signatures
                     foreach (var game in _games.Where(g => !g.IsInstalled))
                     {
-                        if (IsGameDirectory(dir, game))
+                        // Get the expected folder name for this game (with _cn suffix for China region)
+                        var expectedFolderName = GetInstallFolderName(game).ToLowerInvariant();
+                        
+                        // Only check if the directory name matches the expected folder name
+                        // This prevents global and china editions from being confused
+                        if (dirName == expectedFolderName && IsGameDirectory(dir, game))
                         {
                             game.InstallPath = dir;
                             game.IsInstalled = true;
                             game.State = GameState.Ready;
-                            Log.Information("Found installed game: {Name} at {Path}", game.DisplayName, dir);
+                            Log.Information("Found installed game: {Name} ({Region}) at {Path}", game.DisplayName, game.Region, dir);
                         }
                     }
                 }
@@ -332,6 +337,14 @@ public class GameService
                 Log.Warning(ex, "Error scanning directory {Path}", basePath);
             }
         });
+    }
+    
+    /// <summary>
+    /// Gets the install folder name for a game, appending _cn suffix for China region
+    /// </summary>
+    public static string GetInstallFolderName(GameInfo game)
+    {
+        return game.Region == GameRegion.China ? $"{game.Name}_cn" : game.Name;
     }
 
     private bool IsGameDirectory(string path, GameInfo game)
