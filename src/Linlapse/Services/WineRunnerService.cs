@@ -44,8 +44,7 @@ public class WineRunnerService
             Description = "Wine with additional patches",
             Type = WineRunnerType.Wine,
             DownloadUrl = "https://github.com/NelloKudo/Wine-Builds/releases/download/wine-tkg-aagl-v10.15-7/spritz-wine-tkg-staging-wow64-10.15-7-x86_64.tar.xz",
-            Md5Checksum = null, // Will be computed on first download if not provided
-            Size = 300_000_000
+            Md5Checksum = null // Will be computed on first download if not provided
         },
         // Proton runners
         new WineRunner
@@ -56,8 +55,7 @@ public class WineRunnerService
             Description = "CachyOS optimized Proton build with performance improvements",
             Type = WineRunnerType.Proton,
             DownloadUrl = "https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-10.0-20251126-slr/proton-cachyos-10.0-20251126-slr-x86_64.tar.xz",
-            Md5Checksum = null, // Will be computed on first download if not provided
-            Size = 289_000_000
+            Md5Checksum = null // Will be computed on first download if not provided
         },
         new WineRunner
         {
@@ -67,8 +65,7 @@ public class WineRunnerService
             Description = "Special proton made by dawn winery",
             Type = WineRunnerType.Proton,
             DownloadUrl = "https://dawn.wine/dawn-winery/dwproton/releases/download/dwproton-10.0-8/dwproton-10.0-8-x86_64.tar.xz",
-            Md5Checksum = null, // Will be computed on first download if not provided
-            Size = 289_000_000
+            Md5Checksum = null // Will be computed on first download if not provided
         }
     };
 
@@ -107,8 +104,7 @@ public class WineRunnerService
                 Description = runner.Description,
                 Type = runner.Type,
                 DownloadUrl = runner.DownloadUrl,
-                Md5Checksum = runner.Md5Checksum,
-                Size = runner.Size
+                Md5Checksum = runner.Md5Checksum
             };
 
             var installed = installedRunners.FirstOrDefault(r => r.Id == runner.Id);
@@ -168,7 +164,7 @@ public class WineRunnerService
             using var response = await SharedHttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
 
-            var totalBytes = response.Content.Headers.ContentLength ?? runner.Size;
+            var totalBytes = response.Content.Headers.ContentLength;
             var downloadedBytes = 0L;
 
             await using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
@@ -182,7 +178,17 @@ public class WineRunnerService
                     await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
                     downloadedBytes += bytesRead;
 
-                    var downloadProgress = (double)downloadedBytes / totalBytes * DownloadProgressMax;
+                    // Calculate progress - use actual content length if available, otherwise show incremental progress
+                    double downloadProgress;
+                    if (totalBytes.HasValue && totalBytes.Value > 0)
+                    {
+                        downloadProgress = (double)downloadedBytes / totalBytes.Value * DownloadProgressMax;
+                    }
+                    else
+                    {
+                        // If content length is unknown, show slow incremental progress up to 40%
+                        downloadProgress = Math.Min(40.0, downloadedBytes / 10_000_000.0);
+                    }
                     progress?.Report(downloadProgress);
                     DownloadProgressChanged?.Invoke(this, (runnerId, downloadProgress));
                 }

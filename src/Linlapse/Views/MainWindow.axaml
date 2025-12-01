@@ -999,7 +999,6 @@
                                                             </Border>
                                                         </StackPanel>
                                                         <TextBlock Text="{Binding Description}" FontSize="11" Foreground="#71717a" TextWrapping="Wrap"/>
-                                                        <TextBlock Text="{Binding SizeText, StringFormat='Size: {0}'}" FontSize="11" Foreground="#52525b"/>
                                                     </StackPanel>
                                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                                         <Button Content="Download" 
@@ -1049,7 +1048,6 @@
                                                             </Border>
                                                         </StackPanel>
                                                         <TextBlock Text="{Binding Description}" FontSize="11" Foreground="#71717a" TextWrapping="Wrap"/>
-                                                        <TextBlock Text="{Binding SizeText, StringFormat='Size: {0}'}" FontSize="11" Foreground="#52525b"/>
                                                     </StackPanel>
                                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                                         <Button Content="Download" 

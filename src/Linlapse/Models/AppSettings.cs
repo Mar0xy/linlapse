@@ -146,7 +146,6 @@ public class WineRunner
     /// MD5 checksum of the download file for verification (lowercase hex string)
     /// </summary>
     public string? Md5Checksum { get; set; }
-    public long Size { get; set; }
     public bool IsInstalled { get; set; }
     public string? InstallPath { get; set; }
 }

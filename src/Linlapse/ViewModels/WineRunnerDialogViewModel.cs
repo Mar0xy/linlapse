@@ -208,15 +208,10 @@ public partial class WineRunnerViewModel : ViewModelBase
     private WineRunnerType _type;
     
     [ObservableProperty]
-    private long _size;
-    
-    [ObservableProperty]
     private bool _isInstalled;
     
     [ObservableProperty]
     private string? _installPath;
-    
-    public string SizeText => FormatSize(Size);
     
     public WineRunnerViewModel(WineRunner runner)
     {
@@ -225,17 +220,7 @@ public partial class WineRunnerViewModel : ViewModelBase
         _version = runner.Version;
         _description = runner.Description;
         _type = runner.Type;
-        _size = runner.Size;
         _isInstalled = runner.IsInstalled;
         _installPath = runner.InstallPath;
-    }
-    
-    private static string FormatSize(long bytes)
-    {
-        if (bytes >= 1_000_000_000)
-            return $"{bytes / 1_000_000_000.0:F1} GB";
-        if (bytes >= 1_000_000)
-            return $"{bytes / 1_000_000.0:F0} MB";
-        return $"{bytes / 1_000.0:F0} KB";
     }
 }
