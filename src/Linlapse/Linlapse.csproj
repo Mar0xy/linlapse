@@ -50,4 +50,18 @@
     <PackageReference Include="LibVLCSharp" Version="3.9.0" />
     <PackageReference Include="LibVLCSharp.Avalonia" Version="3.9.0" />
   </ItemGroup>
+  <!-- Explicitly include Linux native libraries from Hi3Helper.ZstdNet -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'linux-x64' Or '$(RuntimeIdentifier)' == ''">
+    <Content Include="$(NuGetPackageRoot)hi3helper.zstdnet/1.6.5/build/Lib/linux-x64/libzstd.so">
+      <Link>Lib/linux-x64/libzstd.so</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="$(NuGetPackageRoot)hi3helper.zstdnet/1.6.5/build/Lib/linux-x64/libzstd-bmi2.so">
+      <Link>Lib/linux-x64/libzstd-bmi2.so</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
 </Project>
+
