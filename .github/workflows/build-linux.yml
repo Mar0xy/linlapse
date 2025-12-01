@@ -46,6 +46,12 @@ jobs:
           -p:PublishTrimmed=false \
           -p:IncludeNativeLibrariesForSelfExtract=true \
           -o ./publish/linux-x64
+          
+    - name: Clean up Windows DLLs
+      run: |
+        # Remove Windows DLLs that were copied by Hi3Helper.ZstdNet
+        rm -rf ./publish/linux-x64/Lib/win-*
+        echo "Removed Windows DLLs"
 
     - name: Create launcher script
       run: |
@@ -58,7 +64,7 @@ jobs:
         SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         
         # Add the native library directories to LD_LIBRARY_PATH
-        # Hi3Helper.ZstdNet puts libzstd.so in Lib/linux-x64/
+        # libzstd.so and libzstd-bmi2.so are in Lib/linux-x64/
         export LD_LIBRARY_PATH="${SCRIPT_DIR}/Lib/linux-x64:${SCRIPT_DIR}:${LD_LIBRARY_PATH}"
         
         # Run the actual executable
