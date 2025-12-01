@@ -34,13 +34,18 @@ public class SophonDownloadService : IDisposable
     public event EventHandler<string>? DownloadCompleted;
     public event EventHandler<(string GameId, Exception Error)>? DownloadFailed;
     
+    // Configuration constants
+    private const int DefaultMaxConnectionsPerServer = 32;
+    private const int DefaultMaxParallelChunks = 8;
+    private const string DefaultMatchingField = "game";
+    
     public SophonDownloadService(SettingsService settingsService, GameService gameService)
     {
         _settingsService = settingsService;
         _gameService = gameService;
         _httpClient = new HttpClient(new HttpClientHandler
         {
-            MaxConnectionsPerServer = 128
+            MaxConnectionsPerServer = DefaultMaxConnectionsPerServer
         });
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
     }
@@ -111,7 +116,7 @@ public class SophonDownloadService : IDisposable
             var manifestPair = await SophonManifest.CreateSophonChunkManifestInfoPair(
                 _httpClient,
                 sophonUrl,
-                "game", // matchingField for game data
+                DefaultMatchingField,
                 cancellationToken);
             
             if (!manifestPair.IsFound)
@@ -206,7 +211,7 @@ public class SophonDownloadService : IDisposable
             var parallelOptions = new ParallelOptions
             {
                 CancellationToken = cancellationToken,
-                MaxDegreeOfParallelism = Math.Min(8, Environment.ProcessorCount)
+                MaxDegreeOfParallelism = Math.Min(DefaultMaxParallelChunks, Environment.ProcessorCount)
             };
             
             // Enumerate and download assets
