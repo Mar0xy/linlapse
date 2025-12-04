@@ -79,5 +79,5 @@ jobs:
       with:
         name: linlapse-linux-x64
         path: ./publish/linlapse-linux-x64.tar.gz
-        retention-days: 14
+        retention-days: 4
         if-no-files-found: error
