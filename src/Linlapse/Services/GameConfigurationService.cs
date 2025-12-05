@@ -156,8 +156,6 @@ public class GameConfigurationService
                 IconApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGames?launcher_id=VYTpXlbWo8&language=en-us",
                 BackgroundParser = hoyoverseBackgroundParser,
                 DownloadParser = hoyoverseDownloadParser,
-                BackgroundParser = hoyoverseBackgroundParser,
-                DownloadParser = hoyoverseDownloadParser
             },
             ["gi-cn"] = new()
             {

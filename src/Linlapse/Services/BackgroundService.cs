@@ -541,39 +541,6 @@ public class BackgroundService : IDisposable
         
         return true;
     }
-                data.TryGetProperty("games", out var games) && games.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var gameEntry in games.EnumerateArray())
-                {
-                    if (!gameEntry.TryGetProperty("biz", out var biz))
-                        continue;
-
-                    if (biz.GetString() != gameBiz)
-                        continue;
-
-                    if (gameEntry.TryGetProperty("display", out var display) && display.ValueKind == JsonValueKind.Object)
-                    {
-                        if (display.TryGetProperty("background", out var background) && background.ValueKind == JsonValueKind.Object)
-                        {
-                            if (background.TryGetProperty("url", out var bgUrl))
-                            {
-                                backgroundInfo.Url = bgUrl.GetString() ?? "";
-                                backgroundInfo.Type = BackgroundType.Image;
-                            }
-                        }
-                    }
-                    break;
-                }
-            }
-
-            return string.IsNullOrEmpty(backgroundInfo.Url) ? null : backgroundInfo;
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Failed to parse background response for {GameId}", game.Id);
-            return null;
-        }
-    }
 
     private BackgroundInfo GetDefaultBackground(GameInfo game)
     {
