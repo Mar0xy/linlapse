@@ -17,25 +17,19 @@ public class SophonDownloadService : IDisposable
     private readonly HttpClient _httpClient;
     private readonly SettingsService _settingsService;
     private readonly GameService _gameService;
+    private readonly GameConfigurationService _configurationService;
     
-    // Game branch API URLs - used to get branch, password, and package_id
     private static readonly Dictionary<string, string> GameBranchUrls = new()
     {
-        // Genshin Impact - Global
         { "genshin-global", "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=1Z8W5NHUQb&launcher_id=VYTpXlbWo8" },
-        // Genshin Impact - China
         { "genshin-cn", "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=T2S0Gz4Dr2&launcher_id=jGHBHlcOq1" },
-        // Zenless Zone Zero - Global
         { "zzz-global", "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=U5hbdsT9W7&launcher_id=VYTpXlbWo8" },
-        // Zenless Zone Zero - China
         { "zzz-cn", "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=x6znKlJ0xK&launcher_id=jGHBHlcOq1" }
     };
     
-    // Sophon chunk API base URLs
     private const string SophonChunkApiGlobal = "https://sg-public-api.hoyoverse.com/downloader/sophon_chunk/api/getBuild";
     private const string SophonChunkApiChina = "https://api-takumi.mihoyo.com/downloader/sophon_chunk/api/getBuild";
     
-    // Voice pack language matching fields used by Sophon
     private static readonly Dictionary<VoiceLanguage, string> VoiceLanguageMatchingFields = new()
     {
         { VoiceLanguage.English, "en-us" },
@@ -49,31 +43,28 @@ public class SophonDownloadService : IDisposable
     public event EventHandler<string>? DownloadCompleted;
     public event EventHandler<(string GameId, Exception Error)>? DownloadFailed;
     
-    // Configuration constants
     private const int DefaultMaxConnectionsPerServer = 32;
     private const int DefaultMaxParallelChunks = 8;
     private const string GameMatchingField = "game";
     
-    /// <summary>
-    /// Get the matching field for a voice language
-    /// </summary>
     public static string? GetVoiceLanguageMatchingField(VoiceLanguage language)
     {
         return VoiceLanguageMatchingFields.TryGetValue(language, out var field) ? field : null;
     }
     
-    /// <summary>
-    /// Get all supported voice languages
-    /// </summary>
     public static IEnumerable<VoiceLanguage> GetSupportedVoiceLanguages()
     {
         return VoiceLanguageMatchingFields.Keys;
     }
     
-    public SophonDownloadService(SettingsService settingsService, GameService gameService)
+    public SophonDownloadService(
+        SettingsService settingsService, 
+        GameService gameService,
+        GameConfigurationService configurationService)
     {
         _settingsService = settingsService;
         _gameService = gameService;
+        _configurationService = configurationService;
         _httpClient = new HttpClient(new HttpClientHandler
         {
             MaxConnectionsPerServer = DefaultMaxConnectionsPerServer
@@ -81,30 +72,22 @@ public class SophonDownloadService : IDisposable
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
     }
     
-    /// <summary>
-    /// Check if a game supports Sophon downloads.
-    /// Sophon is supported for Genshin Impact and Zenless Zone Zero.
-    /// </summary>
     public static bool SupportsSophon(GameType gameType)
     {
-        // According to Hi3Helper.Sophon README, Sophon is currently supported for:
-        // - Genshin Impact
-        // - Zenless Zone Zero
         return gameType == GameType.GenshinImpact || gameType == GameType.ZenlessZoneZero;
     }
     
-    /// <summary>
-    /// Check if a game supports Sophon downloads
-    /// </summary>
     public static bool SupportsSophon(GameInfo game)
     {
         return SupportsSophon(game.GameType);
     }
     
-    /// <summary>
-    /// Get the game branch URL for fetching branch info
-    /// </summary>
-    private static string? GetGameBranchUrl(GameInfo game)
+    private string? GetGameBranchUrl(GameInfo game)
+    {
+        return _configurationService.GetBranchUrl(game.Id) ?? GetLegacyGameBranchUrl(game);
+    }
+    
+    private static string? GetLegacyGameBranchUrl(GameInfo game)
     {
         var key = game.GameType switch
         {
@@ -116,12 +99,12 @@ public class SophonDownloadService : IDisposable
         return key != null && GameBranchUrls.TryGetValue(key, out var url) ? url : null;
     }
     
-    /// <summary>
-    /// Get the Sophon chunk API base URL based on region.
-    /// China region uses api-takumi.mihoyo.com, all other regions (Global, SEA, Europe, America, Asia, TW_HK_MO)
-    /// use sg-public-api.hoyoverse.com as they all connect to HoYoverse's global infrastructure.
-    /// </summary>
-    private static string GetSophonChunkApiUrl(GameRegion region)
+    private string? GetSophonChunkApiUrl(GameInfo game)
+    {
+        return _configurationService.GetSophonChunkApiUrl(game.Id) ?? GetLegacySophonChunkApiUrl(game.Region);
+    }
+    
+    private static string GetLegacySophonChunkApiUrl(GameRegion region)
     {
         return region == GameRegion.China ? SophonChunkApiChina : SophonChunkApiGlobal;
     }
@@ -275,9 +258,9 @@ public class SophonDownloadService : IDisposable
     /// <summary>
     /// Build the Sophon getBuild URL from branch info
     /// </summary>
-    private static string BuildSophonGetBuildUrl(GameInfo game, SophonBranchInfo branchInfo)
+    private string BuildSophonGetBuildUrl(GameInfo game, SophonBranchInfo branchInfo)
     {
-        var baseUrl = GetSophonChunkApiUrl(game.Region);
+        var baseUrl = GetSophonChunkApiUrl(game);
         return $"{baseUrl}?branch={branchInfo.Branch}&password={branchInfo.Password}&package_id={branchInfo.PackageId}";
     }
     

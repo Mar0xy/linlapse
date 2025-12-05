@@ -18,9 +18,9 @@ public partial class GameDownloadService : IDisposable
     private readonly DownloadService _downloadService;
     private readonly InstallationService _installationService;
     private readonly SettingsService _settingsService;
+    private readonly GameConfigurationService _configurationService;
     private SophonDownloadService? _sophonDownloadService;
 
-    // Regex for detecting multi-part archive extensions (e.g., .001, .002, .0001, etc.)
     [GeneratedRegex(@"^\.(\d+)$", RegexOptions.Compiled)]
     private static partial Regex MultiPartExtensionRegex();
 
@@ -33,22 +33,21 @@ public partial class GameDownloadService : IDisposable
         GameService gameService,
         DownloadService downloadService,
         InstallationService installationService,
-        SettingsService settingsService)
+        SettingsService settingsService,
+        GameConfigurationService configurationService)
     {
         _gameService = gameService;
         _downloadService = downloadService;
         _installationService = installationService;
         _settingsService = settingsService;
+        _configurationService = configurationService;
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
     }
     
-    /// <summary>
-    /// Gets or creates the SophonDownloadService instance
-    /// </summary>
     private SophonDownloadService GetSophonService()
     {
-        return _sophonDownloadService ??= new SophonDownloadService(_settingsService, _gameService);
+        return _sophonDownloadService ??= new SophonDownloadService(_settingsService, _gameService, _configurationService);
     }
 
     /// <summary>
@@ -581,21 +580,7 @@ public partial class GameDownloadService : IDisposable
 
     private string? GetGameApiUrl(GameInfo game)
     {
-        // Use the new HoYoPlay API endpoints for game packages
-        // These provide consistent download information across all games
-        var launcherId = game.Region switch
-        {
-            GameRegion.Global => "VYTpXlbWo8",  // Global/OS launcher
-            GameRegion.China => "jGHBHlcOq1",   // CN launcher
-            GameRegion.SEA => "VYTpXlbWo8",    // SEA uses global
-            _ => "VYTpXlbWo8"
-        };
-
-        var baseUrl = game.Region == GameRegion.China
-            ? "https://hyp-api.mihoyo.com"
-            : "https://sg-hyp-api.hoyoverse.com";
-
-        return $"{baseUrl}/hyp/hyp-connect/api/getGamePackages?launcher_id={launcherId}";
+        return _configurationService.GetApiUrl(game.Id);
     }
 
     private string GetGameBizFromType(GameInfo game)
@@ -625,52 +610,7 @@ public partial class GameDownloadService : IDisposable
                 GameId = game.Id
             };
 
-            // Parse game package info
-            if (data.TryGetProperty("game", out var gameData))
-            {
-                if (gameData.TryGetProperty("latest", out var latest))
-                {
-                    downloadInfo.Version = latest.GetProperty("version").GetString() ?? "";
-
-                    if (latest.TryGetProperty("path", out var path))
-                    {
-                        downloadInfo.DownloadUrl = path.GetString() ?? "";
-                    }
-
-                    if (latest.TryGetProperty("size", out var size))
-                    {
-                        downloadInfo.TotalSize = GetInt64FromElement(size);
-                    }
-
-                    if (latest.TryGetProperty("package_size", out var packageSize))
-                    {
-                        downloadInfo.PackageSize = GetInt64FromElement(packageSize);
-                    }
-
-                    if (latest.TryGetProperty("md5", out var md5))
-                    {
-                        downloadInfo.PackageMd5 = md5.GetString();
-                    }
-
-                    // Parse voice packs
-                    if (latest.TryGetProperty("voice_packs", out var voicePacks))
-                    {
-                        foreach (var vp in voicePacks.EnumerateArray())
-                        {
-                            var voicePack = new VoicePackDownloadInfo
-                            {
-                                Language = vp.GetProperty("language").GetString() ?? "",
-                                DownloadUrl = vp.TryGetProperty("path", out var vpPath) ? vpPath.GetString() ?? "" : "",
-                                Size = vp.TryGetProperty("size", out var vpSize) ? GetInt64FromElement(vpSize) : 0,
-                                Md5 = vp.TryGetProperty("md5", out var vpMd5) ? vpMd5.GetString() : null
-                            };
-                            downloadInfo.VoicePacks.Add(voicePack);
-                        }
-                    }
-                }
-            }
-
-            // Alternative format for newer APIs (HoYoPlay API)
+            // Try newer HoYoPlay API format first (game_packages)
             if (data.TryGetProperty("game_packages", out var gamePackages))
             {
                 var targetBiz = GetGameBizFromType(game);
@@ -743,6 +683,54 @@ public partial class GameDownloadService : IDisposable
                             }
                         }
                         break; // Found our game
+                    }
+                }
+                
+                // Return the result from game_packages parsing
+                return downloadInfo;
+            }
+
+            // Fallback to old SDK API format (game.latest) - only if game_packages not found
+            if (data.TryGetProperty("game", out var gameData))
+            {
+                if (gameData.TryGetProperty("latest", out var latest))
+                {
+                    downloadInfo.Version = latest.GetProperty("version").GetString() ?? "";
+
+                    if (latest.TryGetProperty("path", out var path))
+                    {
+                        downloadInfo.DownloadUrl = path.GetString() ?? "";
+                    }
+
+                    if (latest.TryGetProperty("size", out var size))
+                    {
+                        downloadInfo.TotalSize = GetInt64FromElement(size);
+                    }
+
+                    if (latest.TryGetProperty("package_size", out var packageSize))
+                    {
+                        downloadInfo.PackageSize = GetInt64FromElement(packageSize);
+                    }
+
+                    if (latest.TryGetProperty("md5", out var md5))
+                    {
+                        downloadInfo.PackageMd5 = md5.GetString();
+                    }
+
+                    // Parse voice packs
+                    if (latest.TryGetProperty("voice_packs", out var voicePacks))
+                    {
+                        foreach (var vp in voicePacks.EnumerateArray())
+                        {
+                            var voicePack = new VoicePackDownloadInfo
+                            {
+                                Language = vp.GetProperty("language").GetString() ?? "",
+                                DownloadUrl = vp.TryGetProperty("path", out var vpPath) ? vpPath.GetString() ?? "" : "",
+                                Size = vp.TryGetProperty("size", out var vpSize) ? GetInt64FromElement(vpSize) : 0,
+                                Md5 = vp.TryGetProperty("md5", out var vpMd5) ? vpMd5.GetString() : null
+                            };
+                            downloadInfo.VoicePacks.Add(voicePack);
+                        }
                     }
                 }
             }
