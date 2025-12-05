@@ -610,52 +610,7 @@ public partial class GameDownloadService : IDisposable
                 GameId = game.Id
             };
 
-            // Parse game package info
-            if (data.TryGetProperty("game", out var gameData))
-            {
-                if (gameData.TryGetProperty("latest", out var latest))
-                {
-                    downloadInfo.Version = latest.GetProperty("version").GetString() ?? "";
-
-                    if (latest.TryGetProperty("path", out var path))
-                    {
-                        downloadInfo.DownloadUrl = path.GetString() ?? "";
-                    }
-
-                    if (latest.TryGetProperty("size", out var size))
-                    {
-                        downloadInfo.TotalSize = GetInt64FromElement(size);
-                    }
-
-                    if (latest.TryGetProperty("package_size", out var packageSize))
-                    {
-                        downloadInfo.PackageSize = GetInt64FromElement(packageSize);
-                    }
-
-                    if (latest.TryGetProperty("md5", out var md5))
-                    {
-                        downloadInfo.PackageMd5 = md5.GetString();
-                    }
-
-                    // Parse voice packs
-                    if (latest.TryGetProperty("voice_packs", out var voicePacks))
-                    {
-                        foreach (var vp in voicePacks.EnumerateArray())
-                        {
-                            var voicePack = new VoicePackDownloadInfo
-                            {
-                                Language = vp.GetProperty("language").GetString() ?? "",
-                                DownloadUrl = vp.TryGetProperty("path", out var vpPath) ? vpPath.GetString() ?? "" : "",
-                                Size = vp.TryGetProperty("size", out var vpSize) ? GetInt64FromElement(vpSize) : 0,
-                                Md5 = vp.TryGetProperty("md5", out var vpMd5) ? vpMd5.GetString() : null
-                            };
-                            downloadInfo.VoicePacks.Add(voicePack);
-                        }
-                    }
-                }
-            }
-
-            // Alternative format for newer APIs (HoYoPlay API)
+            // Try newer HoYoPlay API format first (game_packages)
             if (data.TryGetProperty("game_packages", out var gamePackages))
             {
                 var targetBiz = GetGameBizFromType(game);
@@ -728,6 +683,54 @@ public partial class GameDownloadService : IDisposable
                             }
                         }
                         break; // Found our game
+                    }
+                }
+                
+                // Return the result from game_packages parsing
+                return downloadInfo;
+            }
+
+            // Fallback to old SDK API format (game.latest) - only if game_packages not found
+            if (data.TryGetProperty("game", out var gameData))
+            {
+                if (gameData.TryGetProperty("latest", out var latest))
+                {
+                    downloadInfo.Version = latest.GetProperty("version").GetString() ?? "";
+
+                    if (latest.TryGetProperty("path", out var path))
+                    {
+                        downloadInfo.DownloadUrl = path.GetString() ?? "";
+                    }
+
+                    if (latest.TryGetProperty("size", out var size))
+                    {
+                        downloadInfo.TotalSize = GetInt64FromElement(size);
+                    }
+
+                    if (latest.TryGetProperty("package_size", out var packageSize))
+                    {
+                        downloadInfo.PackageSize = GetInt64FromElement(packageSize);
+                    }
+
+                    if (latest.TryGetProperty("md5", out var md5))
+                    {
+                        downloadInfo.PackageMd5 = md5.GetString();
+                    }
+
+                    // Parse voice packs
+                    if (latest.TryGetProperty("voice_packs", out var voicePacks))
+                    {
+                        foreach (var vp in voicePacks.EnumerateArray())
+                        {
+                            var voicePack = new VoicePackDownloadInfo
+                            {
+                                Language = vp.GetProperty("language").GetString() ?? "",
+                                DownloadUrl = vp.TryGetProperty("path", out var vpPath) ? vpPath.GetString() ?? "" : "",
+                                Size = vp.TryGetProperty("size", out var vpSize) ? GetInt64FromElement(vpSize) : 0,
+                                Md5 = vp.TryGetProperty("md5", out var vpMd5) ? vpMd5.GetString() : null
+                            };
+                            downloadInfo.VoicePacks.Add(voicePack);
+                        }
                     }
                 }
             }
