@@ -1,0 +1,263 @@
+using System.Text.Json;
+using Linlapse.Models;
+using Serilog;
+
+namespace Linlapse.Services;
+
+/// <summary>
+/// Service for managing game configurations from multiple companies.
+/// This allows the launcher to support games from different publishers.
+/// </summary>
+public class GameConfigurationService
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    private readonly string _configurationsPath;
+    private Dictionary<string, GameConfiguration> _configurations;
+
+    public GameConfigurationService()
+    {
+        _configurationsPath = Path.Combine(SettingsService.GetDataDirectory(), "game-configurations.json");
+        _configurations = LoadConfigurations();
+
+        if (_configurations.Count == 0)
+        {
+            InitializeDefaultConfigurations();
+        }
+    }
+
+    private Dictionary<string, GameConfiguration> LoadConfigurations()
+    {
+        try
+        {
+            if (File.Exists(_configurationsPath))
+            {
+                var json = File.ReadAllText(_configurationsPath);
+                var configs = JsonSerializer.Deserialize<Dictionary<string, GameConfiguration>>(json, JsonOptions);
+                if (configs != null)
+                {
+                    Log.Information("Loaded {Count} game configurations", configs.Count);
+                    return configs;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to load game configurations");
+        }
+
+        return new Dictionary<string, GameConfiguration>();
+    }
+
+    private void SaveConfigurations()
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(_configurations, JsonOptions);
+            File.WriteAllText(_configurationsPath, json);
+            Log.Information("Saved {Count} game configurations", _configurations.Count);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to save game configurations");
+        }
+    }
+
+    /// <summary>
+    /// Initialize default game configurations for HoYoverse games
+    /// </summary>
+    private void InitializeDefaultConfigurations()
+    {
+        _configurations = GetDefaultHoYoverseConfigurations();
+        SaveConfigurations();
+        Log.Information("Initialized default game configurations");
+    }
+
+    /// <summary>
+    /// Get default configurations for HoYoverse games
+    /// </summary>
+    private static Dictionary<string, GameConfiguration> GetDefaultHoYoverseConfigurations()
+    {
+        return new Dictionary<string, GameConfiguration>
+        {
+            ["hi3-global"] = new()
+            {
+                Id = "hi3-global",
+                Name = "honkai3rd",
+                DisplayName = "Honkai Impact 3rd",
+                GameType = GameType.HonkaiImpact3rd,
+                Region = GameRegion.Global,
+                Company = GameCompany.HoYoverse,
+                ApiUrl = "https://sdk-os-static.mihoyo.com/bh3_global/mdk/launcher/api/resource?key=dpz65xJ3&launcher_id=10",
+                SupportsSophonDownloads = false,
+                ExecutableNames = new List<string> { "BH3.exe", "honkai3rd.exe" }
+            },
+            ["gi-global"] = new()
+            {
+                Id = "gi-global",
+                Name = "genshin",
+                DisplayName = "Genshin Impact",
+                GameType = GameType.GenshinImpact,
+                Region = GameRegion.Global,
+                Company = GameCompany.HoYoverse,
+                ApiUrl = "https://sdk-os-static.mihoyo.com/hk4e_global/mdk/launcher/api/resource?key=gcStgarh&launcher_id=10",
+                BranchUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=1Z8W5NHUQb&launcher_id=VYTpXlbWo8",
+                SophonChunkApiUrl = "https://sg-public-api.hoyoverse.com/downloader/sophon_chunk/api/getBuild",
+                SupportsSophonDownloads = true,
+                ExecutableNames = new List<string> { "GenshinImpact.exe", "YuanShen.exe" }
+            },
+            ["gi-cn"] = new()
+            {
+                Id = "gi-cn",
+                Name = "yuanshen",
+                DisplayName = "Genshin Impact",
+                GameType = GameType.GenshinImpact,
+                Region = GameRegion.China,
+                Company = GameCompany.HoYoverse,
+                ApiUrl = "https://sdk-static.mihoyo.com/hk4e_cn/mdk/launcher/api/resource?key=eYd89JmJ&launcher_id=18",
+                BranchUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=T2S0Gz4Dr2&launcher_id=jGHBHlcOq1",
+                SophonChunkApiUrl = "https://api-takumi.mihoyo.com/downloader/sophon_chunk/api/getBuild",
+                SupportsSophonDownloads = true,
+                ExecutableNames = new List<string> { "YuanShen.exe", "GenshinImpact.exe" }
+            },
+            ["hsr-global"] = new()
+            {
+                Id = "hsr-global",
+                Name = "starrail",
+                DisplayName = "Honkai: Star Rail",
+                GameType = GameType.HonkaiStarRail,
+                Region = GameRegion.Global,
+                Company = GameCompany.HoYoverse,
+                ApiUrl = "https://hkrpg-launcher-static.hoyoverse.com/hkrpg_global/mdk/launcher/api/resource?key=vplOVX8Vn7cwG8yb&launcher_id=35",
+                SupportsSophonDownloads = false,
+                ExecutableNames = new List<string> { "StarRail.exe" }
+            },
+            ["hsr-cn"] = new()
+            {
+                Id = "hsr-cn",
+                Name = "starrail",
+                DisplayName = "Honkai: Star Rail",
+                GameType = GameType.HonkaiStarRail,
+                Region = GameRegion.China,
+                Company = GameCompany.HoYoverse,
+                ApiUrl = "https://api-launcher.mihoyo.com/hkrpg_cn/mdk/launcher/api/resource?key=6KcVuOkbcqjJomjZ&launcher_id=33",
+                SupportsSophonDownloads = false,
+                ExecutableNames = new List<string> { "StarRail.exe" }
+            },
+            ["zzz-global"] = new()
+            {
+                Id = "zzz-global",
+                Name = "zenless",
+                DisplayName = "Zenless Zone Zero",
+                GameType = GameType.ZenlessZoneZero,
+                Region = GameRegion.Global,
+                Company = GameCompany.HoYoverse,
+                ApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGamePackages?launcher_id=VYTpXlbWo8",
+                BranchUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=U5hbdsT9W7&launcher_id=VYTpXlbWo8",
+                SophonChunkApiUrl = "https://sg-public-api.hoyoverse.com/downloader/sophon_chunk/api/getBuild",
+                SupportsSophonDownloads = true,
+                ExecutableNames = new List<string> { "ZenlessZoneZero.exe" }
+            },
+            ["zzz-cn"] = new()
+            {
+                Id = "zzz-cn",
+                Name = "zenless",
+                DisplayName = "Zenless Zone Zero",
+                GameType = GameType.ZenlessZoneZero,
+                Region = GameRegion.China,
+                Company = GameCompany.HoYoverse,
+                ApiUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGamePackages?launcher_id=jGHBHlcOq1",
+                BranchUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=x6znKlJ0xK&launcher_id=jGHBHlcOq1",
+                SophonChunkApiUrl = "https://api-takumi.mihoyo.com/downloader/sophon_chunk/api/getBuild",
+                SupportsSophonDownloads = true,
+                ExecutableNames = new List<string> { "ZenlessZoneZero.exe" }
+            }
+        };
+    }
+
+    /// <summary>
+    /// Get configuration for a specific game
+    /// </summary>
+    public GameConfiguration? GetConfiguration(string gameId)
+    {
+        return _configurations.TryGetValue(gameId, out var config) ? config : null;
+    }
+
+    /// <summary>
+    /// Get all configurations for a specific company
+    /// </summary>
+    public IEnumerable<GameConfiguration> GetConfigurationsByCompany(GameCompany company)
+    {
+        return _configurations.Values.Where(c => c.Company == company);
+    }
+
+    /// <summary>
+    /// Get all game configurations
+    /// </summary>
+    public IEnumerable<GameConfiguration> GetAllConfigurations()
+    {
+        return _configurations.Values;
+    }
+
+    /// <summary>
+    /// Add or update a game configuration
+    /// </summary>
+    public void SetConfiguration(GameConfiguration configuration)
+    {
+        _configurations[configuration.Id] = configuration;
+        SaveConfigurations();
+        Log.Information("Saved configuration for {GameId}", configuration.Id);
+    }
+
+    /// <summary>
+    /// Remove a game configuration
+    /// </summary>
+    public void RemoveConfiguration(string gameId)
+    {
+        if (_configurations.Remove(gameId))
+        {
+            SaveConfigurations();
+            Log.Information("Removed configuration for {GameId}", gameId);
+        }
+    }
+
+    /// <summary>
+    /// Check if a game supports Sophon downloads based on its configuration
+    /// </summary>
+    public bool SupportsSophonDownloads(string gameId)
+    {
+        var config = GetConfiguration(gameId);
+        return config?.SupportsSophonDownloads ?? false;
+    }
+
+    /// <summary>
+    /// Get the API URL for a game
+    /// </summary>
+    public string? GetApiUrl(string gameId)
+    {
+        var config = GetConfiguration(gameId);
+        return config?.ApiUrl;
+    }
+
+    /// <summary>
+    /// Get the branch URL for a game (used for Sophon downloads)
+    /// </summary>
+    public string? GetBranchUrl(string gameId)
+    {
+        var config = GetConfiguration(gameId);
+        return config?.BranchUrl;
+    }
+
+    /// <summary>
+    /// Get the Sophon chunk API URL for a game
+    /// </summary>
+    public string? GetSophonChunkApiUrl(string gameId)
+    {
+        var config = GetConfiguration(gameId);
+        return config?.SophonChunkApiUrl;
+    }
+}

@@ -25,6 +25,7 @@ public class GameInfo : INotifyPropertyChanged
     private TimeSpan _totalPlayTime;
     private GameState _state = GameState.NotInstalled;
     private bool _isDownloading;
+    private GameCompany _company = GameCompany.HoYoverse;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -61,6 +62,12 @@ public class GameInfo : INotifyPropertyChanged
     {
         get => _region;
         set { if (_region != value) { _region = value; OnPropertyChanged(); } }
+    }
+
+    public GameCompany Company
+    {
+        get => _company;
+        set { if (_company != value) { _company = value; OnPropertyChanged(); } }
     }
 
     public string InstallPath

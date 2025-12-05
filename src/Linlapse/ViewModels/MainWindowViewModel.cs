@@ -181,15 +181,16 @@ public partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel()
     {
         _settingsService = new SettingsService();
+        var _configurationService = new GameConfigurationService();
         _gameService = new GameService(_settingsService);
         _downloadService = new DownloadService(_settingsService);
         _installationService = new InstallationService(_settingsService, _downloadService, _gameService);
         _repairService = new RepairService(_gameService, _downloadService);
         _cacheService = new CacheService(_gameService, _settingsService);
-        _updateService = new UpdateService(_gameService, _downloadService, _installationService);
+        _updateService = new UpdateService(_gameService, _downloadService, _installationService, _configurationService);
         _gameSettingsService = new GameSettingsService(_gameService);
         _launcherService = new GameLauncherService(_settingsService, _gameService);
-        _gameDownloadService = new GameDownloadService(_gameService, _downloadService, _installationService, _settingsService);
+        _gameDownloadService = new GameDownloadService(_gameService, _downloadService, _installationService, _settingsService, _configurationService);
         _backgroundService = new BackgroundService(_gameService, _settingsService);
         _wineRunnerService = new WineRunnerService(_settingsService, _downloadService);
 
