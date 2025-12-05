@@ -82,6 +82,43 @@ public class GameConfigurationService
     /// </summary>
     private static Dictionary<string, GameConfiguration> GetDefaultHoYoverseConfigurations()
     {
+        // Create default parser config for HoYoverse games
+        var hoyoverseBackgroundParser = new BackgroundParserConfig
+        {
+            ParserType = BackgroundParserType.HoYoverse,
+            DataRootPath = "data",
+            GameListPath = "game_info_list",
+            GameIdentifierField = "game.biz",
+            BackgroundsArrayPath = "backgrounds",
+            UrlFields = new Dictionary<string, string>
+            {
+                { "video", "video.url" },
+                { "image", "background.url" },
+                { "theme", "theme.url" },
+                { "icon", "game.icon.url" }
+            }
+        };
+        
+        var hoyoverseDownloadParser = new DownloadParserConfig
+        {
+            ParserType = DownloadParserType.HoYoverse,
+            DataRootPath = "data",
+            GameDataPath = "game",
+            GamePackagesPath = "game_packages",
+            GameIdentifierField = "game.biz",
+            FieldPaths = new Dictionary<string, string>
+            {
+                { "version", "latest.version" },
+                { "url", "latest.path" },
+                { "size", "latest.size" },
+                { "md5", "latest.md5" },
+                { "voice_packs", "latest.voice_packs" },
+                { "packages_version", "main.major.version" },
+                { "packages_array", "main.major.game_pkgs" },
+                { "audio_packs", "main.major.audio_pkgs" }
+            }
+        };
+        
         return new Dictionary<string, GameConfiguration>
         {
             ["hi3-global"] = new()
@@ -94,7 +131,12 @@ public class GameConfigurationService
                 Company = GameCompany.HoYoverse,
                 ApiUrl = "https://sdk-os-static.mihoyo.com/bh3_global/mdk/launcher/api/resource?key=dpz65xJ3&launcher_id=10",
                 SupportsSophonDownloads = false,
-                ExecutableNames = new List<string> { "BH3.exe", "honkai3rd.exe" }
+                ExecutableNames = new List<string> { "BH3.exe", "honkai3rd.exe" },
+                GameBizIdentifier = "bh3_global",
+                BackgroundApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=VYTpXlbWo8&language=en-us",
+                IconApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGames?launcher_id=VYTpXlbWo8&language=en-us",
+                BackgroundParser = hoyoverseBackgroundParser,
+                DownloadParser = hoyoverseDownloadParser
             },
             ["gi-global"] = new()
             {
@@ -108,7 +150,14 @@ public class GameConfigurationService
                 BranchUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=1Z8W5NHUQb&launcher_id=VYTpXlbWo8",
                 SophonChunkApiUrl = "https://sg-public-api.hoyoverse.com/downloader/sophon_chunk/api/getBuild",
                 SupportsSophonDownloads = true,
-                ExecutableNames = new List<string> { "GenshinImpact.exe", "YuanShen.exe" }
+                ExecutableNames = new List<string> { "GenshinImpact.exe", "YuanShen.exe" },
+                GameBizIdentifier = "hk4e_global",
+                BackgroundApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=VYTpXlbWo8&language=en-us",
+                IconApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGames?launcher_id=VYTpXlbWo8&language=en-us",
+                BackgroundParser = hoyoverseBackgroundParser,
+                DownloadParser = hoyoverseDownloadParser,
+                BackgroundParser = hoyoverseBackgroundParser,
+                DownloadParser = hoyoverseDownloadParser
             },
             ["gi-cn"] = new()
             {
@@ -122,7 +171,12 @@ public class GameConfigurationService
                 BranchUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=T2S0Gz4Dr2&launcher_id=jGHBHlcOq1",
                 SophonChunkApiUrl = "https://api-takumi.mihoyo.com/downloader/sophon_chunk/api/getBuild",
                 SupportsSophonDownloads = true,
-                ExecutableNames = new List<string> { "YuanShen.exe", "GenshinImpact.exe" }
+                ExecutableNames = new List<string> { "YuanShen.exe", "GenshinImpact.exe" },
+                GameBizIdentifier = "hk4e_cn",
+                BackgroundApiUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1&language=zh-cn",
+                IconApiUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGames?launcher_id=jGHBHlcOq1&language=zh-cn",
+                BackgroundParser = hoyoverseBackgroundParser,
+                DownloadParser = hoyoverseDownloadParser
             },
             ["hsr-global"] = new()
             {
@@ -134,7 +188,12 @@ public class GameConfigurationService
                 Company = GameCompany.HoYoverse,
                 ApiUrl = "https://hkrpg-launcher-static.hoyoverse.com/hkrpg_global/mdk/launcher/api/resource?key=vplOVX8Vn7cwG8yb&launcher_id=35",
                 SupportsSophonDownloads = false,
-                ExecutableNames = new List<string> { "StarRail.exe" }
+                ExecutableNames = new List<string> { "StarRail.exe" },
+                GameBizIdentifier = "hkrpg_global",
+                BackgroundApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=VYTpXlbWo8&language=en-us",
+                IconApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGames?launcher_id=VYTpXlbWo8&language=en-us",
+                BackgroundParser = hoyoverseBackgroundParser,
+                DownloadParser = hoyoverseDownloadParser
             },
             ["hsr-cn"] = new()
             {
@@ -146,7 +205,12 @@ public class GameConfigurationService
                 Company = GameCompany.HoYoverse,
                 ApiUrl = "https://api-launcher.mihoyo.com/hkrpg_cn/mdk/launcher/api/resource?key=6KcVuOkbcqjJomjZ&launcher_id=33",
                 SupportsSophonDownloads = false,
-                ExecutableNames = new List<string> { "StarRail.exe" }
+                ExecutableNames = new List<string> { "StarRail.exe" },
+                GameBizIdentifier = "hkrpg_cn",
+                BackgroundApiUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1&language=zh-cn",
+                IconApiUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGames?launcher_id=jGHBHlcOq1&language=zh-cn",
+                BackgroundParser = hoyoverseBackgroundParser,
+                DownloadParser = hoyoverseDownloadParser
             },
             ["zzz-global"] = new()
             {
@@ -160,7 +224,12 @@ public class GameConfigurationService
                 BranchUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=U5hbdsT9W7&launcher_id=VYTpXlbWo8",
                 SophonChunkApiUrl = "https://sg-public-api.hoyoverse.com/downloader/sophon_chunk/api/getBuild",
                 SupportsSophonDownloads = true,
-                ExecutableNames = new List<string> { "ZenlessZoneZero.exe" }
+                ExecutableNames = new List<string> { "ZenlessZoneZero.exe" },
+                GameBizIdentifier = "nap_global",
+                BackgroundApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=VYTpXlbWo8&language=en-us",
+                IconApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGames?launcher_id=VYTpXlbWo8&language=en-us",
+                BackgroundParser = hoyoverseBackgroundParser,
+                DownloadParser = hoyoverseDownloadParser
             },
             ["zzz-cn"] = new()
             {
@@ -174,7 +243,12 @@ public class GameConfigurationService
                 BranchUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=x6znKlJ0xK&launcher_id=jGHBHlcOq1",
                 SophonChunkApiUrl = "https://api-takumi.mihoyo.com/downloader/sophon_chunk/api/getBuild",
                 SupportsSophonDownloads = true,
-                ExecutableNames = new List<string> { "ZenlessZoneZero.exe" }
+                ExecutableNames = new List<string> { "ZenlessZoneZero.exe" },
+                GameBizIdentifier = "nap_cn",
+                BackgroundApiUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1&language=zh-cn",
+                IconApiUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGames?launcher_id=jGHBHlcOq1&language=zh-cn",
+                BackgroundParser = hoyoverseBackgroundParser,
+                DownloadParser = hoyoverseDownloadParser
             }
         };
     }

@@ -191,7 +191,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _gameSettingsService = new GameSettingsService(_gameService);
         _launcherService = new GameLauncherService(_settingsService, _gameService);
         _gameDownloadService = new GameDownloadService(_gameService, _downloadService, _installationService, _settingsService, _configurationService);
-        _backgroundService = new BackgroundService(_gameService, _settingsService);
+        _backgroundService = new BackgroundService(_gameService, _settingsService, _configurationService);
         _wineRunnerService = new WineRunnerService(_settingsService, _downloadService);
 
         // Subscribe to events
