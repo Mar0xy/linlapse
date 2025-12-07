@@ -108,11 +108,7 @@ public class GameConfigurationService
             GameIdentifierField = "game.biz",
             FieldPaths = new Dictionary<string, string>
             {
-                { "version", "latest.version" },
-                { "url", "latest.path" },
-                { "size", "latest.size" },
-                { "md5", "latest.md5" },
-                { "voice_packs", "latest.voice_packs" },
+                { "version", "main.major.version" },
                 { "packages_version", "main.major.version" },
                 { "packages_array", "main.major.game_pkgs" },
                 { "audio_packs", "main.major.audio_pkgs" }
@@ -149,7 +145,7 @@ public class GameConfigurationService
                 ApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGamePackages?launcher_id=VYTpXlbWo8",
                 BranchUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=1Z8W5NHUQb&launcher_id=VYTpXlbWo8",
                 SophonChunkApiUrl = "https://sg-public-api.hoyoverse.com/downloader/sophon_chunk/api/getBuild",
-                SupportsSophonDownloads = true,
+                SupportsSophonDownloads = false,
                 ExecutableNames = new List<string> { "GenshinImpact.exe", "YuanShen.exe" },
                 GameBizIdentifier = "hk4e_global",
                 BackgroundApiUrl = "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=VYTpXlbWo8&language=en-us",
@@ -168,7 +164,7 @@ public class GameConfigurationService
                 ApiUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGamePackages?launcher_id=jGHBHlcOq1",
                 BranchUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGameBranches?game_ids[]=T2S0Gz4Dr2&launcher_id=jGHBHlcOq1",
                 SophonChunkApiUrl = "https://api-takumi.mihoyo.com/downloader/sophon_chunk/api/getBuild",
-                SupportsSophonDownloads = true,
+                SupportsSophonDownloads = false,
                 ExecutableNames = new List<string> { "YuanShen.exe", "GenshinImpact.exe" },
                 GameBizIdentifier = "hk4e_cn",
                 BackgroundApiUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1&language=zh-cn",
