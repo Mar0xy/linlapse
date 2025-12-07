@@ -80,13 +80,12 @@ jobs:
         Comment=Linux Game Launcher for HoYoverse games and more
         Exec=Linlapse
         Icon=linlapse
-        Categories=Game;Utility;
+        Categories=Game;
         Terminal=false
         EOF
         
-        # Create a simple icon (placeholder - you can replace with actual icon)
-        # For now, we'll skip icon generation and just create a symlink
-        touch ./AppDir/usr/share/icons/hicolor/256x256/apps/linlapse.png
+        # Get a simple icon (placeholder)
+        curl -L "https://drive.yuugi.dev/f/826c1d99eca94bfbbd29/?dl=1" -o ./AppDir/usr/share/icons/hicolor/256x256/apps/linlapse.png
         
         # Create AppStream metadata
         cat > ./AppDir/usr/share/metainfo/linlapse.appdata.xml << 'EOF'
@@ -133,8 +132,9 @@ jobs:
     - name: Download appimage-builder
       run: |
         wget https://github.com/Lord-Kamina/appimage-builder/releases/download/continuous/appimage-builder_x86_64-AppImage.tar
-        tar -xf appimage-builder_x86_64-AppImage.tar
-        chmod +x appimage-builder-1.1.1.dev32+g2a3a917-x86_64.AppImage
+        tar -xvf appimage-builder_x86_64-AppImage.tar --transform='s/.*\///'
+        mv appimage-builder-*-x86_64.AppImage appimage-builder-x86_64.AppImage
+        chmod +x appimage-builder-x86_64.AppImage
 
     - name: Create AppImage recipe
       run: |
@@ -174,13 +174,14 @@ jobs:
               - usr/share/doc/*/TODO.*
         
         AppImage:
+          comp: zstd
           arch: x86_64
           file_name: Linlapse-x86_64.AppImage
         EOF
 
     - name: Build AppImage
       run: |
-        ./appimage-builder-1.1.1.dev32+g2a3a917-x86_64.AppImage --recipe AppImageBuilder.yml --skip-test
+        ./appimage-builder-x86_64.AppImage --recipe AppImageBuilder.yml --skip-test
       continue-on-error: true
 
     - name: Alternative AppImage build
@@ -212,7 +213,7 @@ jobs:
       with:
         name: Linlapse-AppImage
         path: Linlapse-x86_64.AppImage
-        retention-days: 14
+        retention-days: 4
         if-no-files-found: error
 
     - name: Create Release
