@@ -124,10 +124,6 @@ jobs:
         EOF
         
         chmod +x ./AppDir/AppRun
-        
-        # Create symbolic links
-        ln -sf usr/share/applications/linlapse.desktop ./AppDir/linlapse.desktop
-        ln -sf usr/share/icons/hicolor/256x256/apps/linlapse.png ./AppDir/linlapse.png
 
     - name: Download appimage-builder
       run: |
@@ -192,6 +188,10 @@ jobs:
         # If appimage-builder fails, create a simple AppImage manually
         wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
         chmod +x appimagetool-x86_64.AppImage
+
+        # Create symbolic links
+        ln -sf usr/share/applications/linlapse.desktop ./AppDir/linlapse.desktop
+        ln -sf usr/share/icons/hicolor/256x256/apps/linlapse.png ./AppDir/linlapse.png
         
         # Extract appimagetool
         ./appimagetool-x86_64.AppImage --appimage-extract
