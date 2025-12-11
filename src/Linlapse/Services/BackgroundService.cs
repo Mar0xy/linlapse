@@ -23,8 +23,15 @@ public class BackgroundService : IDisposable
         _gameService = gameService;
         _settingsService = settingsService;
         _configurationService = configurationService;
-        _httpClient = new HttpClient();
+        
+        // Configure HttpClient with automatic decompression for gzip/deflate responses
+        var handler = new HttpClientHandler
+        {
+            AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+        };
+        _httpClient = new HttpClient(handler);
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
+        
         _backgroundCacheDir = Path.Combine(SettingsService.GetCacheDirectory(), "backgrounds");
         _iconCacheDir = Path.Combine(SettingsService.GetCacheDirectory(), "icons");
         _themeCacheDir = Path.Combine(SettingsService.GetCacheDirectory(), "themes");
