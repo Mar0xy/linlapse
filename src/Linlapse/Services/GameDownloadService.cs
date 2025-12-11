@@ -247,6 +247,10 @@ public partial class GameDownloadService : IDisposable
             downloadProgress.TotalFiles = segments.Count;
             Log.Information("Downloading {Count} package segment(s) for {GameId}", segments.Count, gameId);
 
+            // Check if this is a direct file download (Kuro Games style) vs archive download
+            var config = _configurationService.GetConfiguration(gameId);
+            bool isDirectDownload = config?.DownloadParser?.ParserType == DownloadParserType.Kuro;
+
             for (int i = 0; i < segments.Count; i++)
             {
                 var segment = segments[i];
@@ -263,7 +267,32 @@ public partial class GameDownloadService : IDisposable
                     originalFileName = $"game_package_part{segment.PartNumber}{extension}";
                 }
 
-                var segmentPath = Path.Combine(tempDir, originalFileName);
+                // For direct downloads (Kuro), use the stored relative path to preserve directory structure
+                string segmentPath;
+                
+                if (isDirectDownload && !string.IsNullOrEmpty(segment.RelativePath))
+                {
+                    // Use the relative path from the segment (extracted from index file)
+                    // Normalize path separators for the current OS
+                    var relativeFilePath = segment.RelativePath.Replace('/', Path.DirectorySeparatorChar);
+                    
+                    segmentPath = Path.Combine(installPath, relativeFilePath);
+                    
+                    // Ensure the directory exists
+                    var directory = Path.GetDirectoryName(segmentPath);
+                    if (!string.IsNullOrEmpty(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+                    
+                    downloadProgress.CurrentFile = relativeFilePath;
+                    Log.Debug("Direct download to: {RelativePath}", relativeFilePath);
+                }
+                else
+                {
+                    // Archive download - use temp directory
+                    segmentPath = Path.Combine(tempDir, originalFileName);
+                }
 
                 var segmentProgress = new Progress<DownloadProgress>(dp =>
                 {
@@ -386,11 +415,30 @@ public partial class GameDownloadService : IDisposable
             downloadProgress.State = GameDownloadState.Verifying;
             progress?.Report(downloadProgress);
 
+            Directory.CreateDirectory(installPath);
+
+            // For direct downloads (Kuro style), files are already in place - skip extraction
+            if (isDirectDownload)
+            {
+                Log.Information("Direct download complete - files already in place at: {Path}", installPath);
+                
+                // Update game info - UpdateGameInstallPath will set the state based on whether
+                // the game executable exists
+                _gameService.UpdateGameInstallPath(gameId, installPath);
+                game.Version = downloadInfo.Version;
+
+                downloadProgress.State = GameDownloadState.Completed;
+                progress?.Report(downloadProgress);
+                GameInstallCompleted?.Invoke(this, gameId);
+
+                Log.Information("Game installed successfully: {GameId} at {Path}", gameId, installPath);
+                return true;
+            }
+
+            // For archive downloads, proceed with extraction
             // Extract/Install
             downloadProgress.State = GameDownloadState.Extracting;
             progress?.Report(downloadProgress);
-
-            Directory.CreateDirectory(installPath);
 
             // Separate multi-part archives from regular archives
             // Multi-part archives have extensions like .zip.001, .zip.002, etc.
@@ -794,6 +842,13 @@ public partial class GameDownloadService : IDisposable
                 downloadInfo.Version = version.GetString() ?? "";
             }
 
+            // Get size (unCompressSize for Kuro Games)
+            if (parser.FieldPaths.TryGetValue("size", out var sizePath) &&
+                root.TryGetProperty(sizePath, out var sizeElement))
+            {
+                downloadInfo.TotalSize = GetInt64FromElement(sizeElement);
+            }
+
             // Get indexFile path
             if (!parser.FieldPaths.TryGetValue("indexFile", out var indexPath) ||
                 !root.TryGetProperty(indexPath, out var indexFile))
@@ -831,37 +886,65 @@ public partial class GameDownloadService : IDisposable
             Log.Debug("Fetching Kuro index file from: {Url}", indexUrl);
 
             var indexResponse = await _httpClient.GetStringAsync(indexUrl, cancellationToken);
-            var indexLines = indexResponse.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-
-            // Parse index file to create segments
-            // Format: each line is typically a file path
-            // Note: Kuro Games API does not provide file sizes or MD5 hashes in the index
-            // These will need to be determined during the actual download process
-            int partNumber = 1;
-
-            foreach (var line in indexLines)
+            
+            // Parse index file as JSON with "resource" array containing file objects
+            // Format: { "resource": [ { "dest": "path", "md5": "hash", "size": 123 }, ... ] }
+            using var indexDoc = JsonDocument.Parse(indexResponse);
+            var indexRoot = indexDoc.RootElement;
+            
+            if (!indexRoot.TryGetProperty("resource", out var resourceArray) || resourceArray.ValueKind != JsonValueKind.Array)
             {
-                var filePath = line.Trim();
+                Log.Warning("No resource array found in Kuro index file for {GameId}", game.Id);
+                return null;
+            }
+            
+            int partNumber = 1;
+            long calculatedTotalSize = 0;
+
+            foreach (var fileObj in resourceArray.EnumerateArray())
+            {
+                // Each file object has: dest (path), md5, size
+                if (!fileObj.TryGetProperty("dest", out var destProp))
+                    continue;
+                    
+                var filePath = destProp.GetString();
                 if (string.IsNullOrEmpty(filePath))
                     continue;
 
-                // Construct full URL: baseUrl + filePath
-                var fileUrl = $"{downloadBaseUrl}{baseUrlStr}/{filePath}";
+                // Get MD5 and size if available
+                string? md5 = null;
+                long size = 0;
+                
+                if (fileObj.TryGetProperty("md5", out var md5Prop))
+                    md5 = md5Prop.GetString();
+                    
+                if (fileObj.TryGetProperty("size", out var sizeProp))
+                    size = GetInt64FromElement(sizeProp);
+
+                // Construct full URL: downloadBaseUrl + baseUrl + filePath
+                // Ensure proper URL formatting (no double slashes except after protocol)
+                var baseUrlPart = baseUrlStr.TrimEnd('/');
+                var filePathPart = filePath.TrimStart('/');
+                var fileUrl = $"{downloadBaseUrl}{baseUrlPart}/{filePathPart}";
 
                 var segment = new GamePackageSegment
                 {
                     DownloadUrl = fileUrl,
                     PartNumber = partNumber++,
-                    // Size and MD5 are not provided in Kuro's index file format
-                    // Download service will determine size from HTTP headers during download
-                    Size = 0,
-                    Md5 = null
+                    Size = size,
+                    Md5 = md5,
+                    // Store the relative file path so we can extract it later
+                    RelativePath = filePath
                 };
                 downloadInfo.PackageSegments.Add(segment);
+                calculatedTotalSize += size;
             }
-
-            // TotalSize will be calculated during download as individual file sizes are determined
-            downloadInfo.TotalSize = 0;
+            
+            // Update total size if we have a calculated value and it wasn't set from config
+            if (downloadInfo.TotalSize == 0 && calculatedTotalSize > 0)
+            {
+                downloadInfo.TotalSize = calculatedTotalSize;
+            }
             
             // Set first segment as primary download URL for backwards compatibility
             if (downloadInfo.PackageSegments.Count > 0)
@@ -932,6 +1015,11 @@ public class GamePackageSegment
     public long Size { get; set; }
     public string? Md5 { get; set; }
     public int PartNumber { get; set; }
+    /// <summary>
+    /// Relative file path for direct downloads (e.g., Kuro Games)
+    /// Used to preserve directory structure when downloading individual files
+    /// </summary>
+    public string? RelativePath { get; set; }
 }
 
 /// <summary>

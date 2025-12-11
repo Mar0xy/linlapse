@@ -287,7 +287,8 @@ public class GameConfigurationService
                     {
                         { "version", "version" },
                         { "indexFile", "indexFile" },
-                        { "baseUrl", "baseUrl" }
+                        { "baseUrl", "baseUrl" },
+                        { "size", "unCompressSize" }
                     }
                 }
             }
