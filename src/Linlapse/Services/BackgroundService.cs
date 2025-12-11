@@ -517,33 +517,34 @@ public class BackgroundService : IDisposable
                 GameId = game.Id
             };
 
-            // Extract slogan (theme image)
+            // Extract slogan (theme image) - Kuro API returns full URLs
             if (parser.UrlFields.TryGetValue("slogan", out var sloganPath) &&
                 metadata.TryGetProperty(sloganPath, out var sloganUrl))
             {
                 var sloganUrlStr = sloganUrl.GetString();
                 if (!string.IsNullOrEmpty(sloganUrlStr))
                 {
-                    backgroundInfo.ThemeUrl = $"{baseUrl}{backgroundId}/{sloganUrlStr}";
+                    // URL is already complete, no need to construct
+                    backgroundInfo.ThemeUrl = sloganUrlStr;
                 }
             }
 
-            // Extract background file (can be video or image)
+            // Extract background file (can be video or image) - Kuro API returns full URLs
             if (parser.UrlFields.TryGetValue("backgroundFile", out var bgPath) &&
                 metadata.TryGetProperty(bgPath, out var bgFile))
             {
                 var bgFileStr = bgFile.GetString();
                 if (!string.IsNullOrEmpty(bgFileStr))
                 {
-                    var bgUrl = $"{baseUrl}{backgroundId}/{bgFileStr}";
-                    backgroundInfo.Url = bgUrl;
+                    // URL is already complete, no need to construct
+                    backgroundInfo.Url = bgFileStr;
                     
                     // Determine type from file extension
                     var ext = Path.GetExtension(bgFileStr).ToLowerInvariant();
                     if (ext == ".mp4" || ext == ".webm")
                     {
                         backgroundInfo.Type = BackgroundType.Video;
-                        backgroundInfo.VideoUrl = bgUrl;
+                        backgroundInfo.VideoUrl = bgFileStr;
                     }
                     else
                     {
