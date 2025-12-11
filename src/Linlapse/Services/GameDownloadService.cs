@@ -768,12 +768,18 @@ public partial class GameDownloadService : IDisposable
             if (parser == null)
                 return null;
 
-            // Navigate to data root (config)
-            if (!string.IsNullOrEmpty(parser.DataRootPath) && 
-                !root.TryGetProperty(parser.DataRootPath, out root))
+            // Navigate to data root (supports dot notation for nested paths)
+            if (!string.IsNullOrEmpty(parser.DataRootPath))
             {
-                Log.Warning("No {Path} found in Kuro download response for {GameId}", parser.DataRootPath, game.Id);
-                return null;
+                var pathParts = parser.DataRootPath.Split('.');
+                foreach (var part in pathParts)
+                {
+                    if (!root.TryGetProperty(part, out root))
+                    {
+                        Log.Warning("No {Path} found in Kuro download response for {GameId}", parser.DataRootPath, game.Id);
+                        return null;
+                    }
+                }
             }
 
             var downloadInfo = new GameDownloadInfo

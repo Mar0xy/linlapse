@@ -279,7 +279,7 @@ public class GameConfigurationService
                 DownloadParser = new DownloadParserConfig
                 {
                     ParserType = DownloadParserType.Kuro,
-                    DataRootPath = "config",
+                    DataRootPath = "default.config", // Navigate to default.config in Kuro API response
                     GameDataPath = "", // Not used for Kuro
                     GamePackagesPath = "", // Not used for Kuro
                     GameIdentifierField = "", // Not used for Kuro
