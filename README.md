@@ -7,13 +7,14 @@
   <img src="https://img.shields.io/badge/License-MIT-orange" alt="License"/>
 </p>
 
-**Linlapse** is a Linux game launcher inspired by [Collapse Launcher](https://github.com/CollapseLauncher/Collapse), designed to manage and launch Windows games on Linux using Wine/Proton. Currently supports HoYoverse games (Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, and Honkai Impact 3rd), with an extensible architecture for adding support for other game publishers.
+**Linlapse** is a Linux game launcher inspired by [Collapse Launcher](https://github.com/CollapseLauncher/Collapse), designed to manage and launch Windows games on Linux using Wine/Proton. Currently supports HoYoverse games (Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, and Honkai Impact 3rd) and Kuro Games (Wuthering Waves), with an extensible architecture for adding support for other game publishers.
 
 ## Features
 
 ### Game Management
 - 🎮 **Multi-Game Support**: Manage multiple games from various publishers
 - 🏢 **HoYoverse Games**: Full support for Honkai Impact 3rd, Genshin Impact, Honkai: Star Rail, and Zenless Zone Zero
+- 🎯 **Kuro Games**: Full support for Wuthering Waves
 - 🔍 **Auto-Detection**: Automatically scan and detect installed games
 - 📊 **Game Status Tracking**: Track installation state, version, and play time
 - 🔧 **Extensible Architecture**: Easy to add support for games from other publishers
@@ -173,15 +174,15 @@ Linlapse uses Wine to run Windows games. You can configure:
 
 ### Game Features
 
-| Feature | Honkai Impact 3rd | Genshin Impact | Star Rail | Zenless Zone Zero |
-|---------|-------------------|----------------|-----------|-------------------|
-| Launch | ✅ | ✅ | ✅ | ✅ |
-| Update Check | ✅ | ✅ | ✅ | ✅ |
-| File Repair | ✅ | ✅ | ✅ | ✅ |
-| Cache Clear | ✅ | ✅ | ✅ | ✅ |
-| Graphics Settings | ✅ | ✅ | ✅ | ✅ |
-| Audio Settings | ✅ | ✅ | ✅ | ✅ |
-| Voice Packs | ❌ | ✅ | ✅ | ✅ |
+| Feature | Honkai Impact 3rd | Genshin Impact | Star Rail | Zenless Zone Zero | Wuthering Waves |
+|---------|-------------------|----------------|-----------|-------------------|-----------------|
+| Launch | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Update Check | ✅ | ✅ | ✅ | ✅ | ✅ |
+| File Repair | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Cache Clear | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Graphics Settings | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Audio Settings | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Voice Packs | ❌ | ✅ | ✅ | ✅ | ❌ |
 
 ## Project Structure
 
@@ -263,3 +264,4 @@ This project is **NOT AFFILIATED** with any game publishers or companies whose g
 
 Currently supported publishers:
 - HoYoverse (COGNOSPHERE PTE. LTD.) / miHoYo Co., Ltd.
+- Kuro Games
