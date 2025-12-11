@@ -72,7 +72,7 @@ public partial class GameDownloadService : IDisposable
             }
 
             var response = await _httpClient.GetStringAsync(apiUrl, cancellationToken);
-            var downloadInfo = ParseDownloadResponse(game, response);
+            var downloadInfo = await ParseDownloadResponseAsync(game, response, cancellationToken);
 
             if (downloadInfo != null)
             {
@@ -595,7 +595,7 @@ public partial class GameDownloadService : IDisposable
         };
     }
 
-    private GameDownloadInfo? ParseDownloadResponse(GameInfo game, string response)
+    private async Task<GameDownloadInfo?> ParseDownloadResponseAsync(GameInfo game, string response, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -603,7 +603,7 @@ public partial class GameDownloadService : IDisposable
             var config = _configurationService.GetConfiguration(game.Id);
             if (config?.DownloadParser?.ParserType == DownloadParserType.Kuro)
             {
-                return ParseKuroDownloadResponse(game, response, config);
+                return await ParseKuroDownloadResponseAsync(game, response, config, cancellationToken);
             }
 
             using var doc = JsonDocument.Parse(response);
@@ -751,7 +751,7 @@ public partial class GameDownloadService : IDisposable
         }
     }
 
-    private GameDownloadInfo? ParseKuroDownloadResponse(GameInfo game, string response, GameConfiguration config)
+    private async Task<GameDownloadInfo?> ParseKuroDownloadResponseAsync(GameInfo game, string response, GameConfiguration config, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -818,12 +818,13 @@ public partial class GameDownloadService : IDisposable
             var indexUrl = $"{downloadBaseUrl}{indexFileStr}";
             Log.Debug("Fetching Kuro index file from: {Url}", indexUrl);
 
-            var indexResponse = _httpClient.GetStringAsync(indexUrl).GetAwaiter().GetResult();
+            var indexResponse = await _httpClient.GetStringAsync(indexUrl, cancellationToken);
             var indexLines = indexResponse.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
             // Parse index file to create segments
             // Format: each line is typically a file path
-            long totalSize = 0;
+            // Note: Kuro Games API does not provide file sizes or MD5 hashes in the index
+            // These will need to be determined during the actual download process
             int partNumber = 1;
 
             foreach (var line in indexLines)
@@ -839,14 +840,16 @@ public partial class GameDownloadService : IDisposable
                 {
                     DownloadUrl = fileUrl,
                     PartNumber = partNumber++,
-                    // Size and MD5 are not provided in the index, will be determined during download
+                    // Size and MD5 are not provided in Kuro's index file format
+                    // Download service will determine size from HTTP headers during download
                     Size = 0,
                     Md5 = null
                 };
                 downloadInfo.PackageSegments.Add(segment);
             }
 
-            downloadInfo.TotalSize = totalSize; // Will be calculated during download
+            // TotalSize will be calculated during download as individual file sizes are determined
+            downloadInfo.TotalSize = 0;
             
             // Set first segment as primary download URL for backwards compatibility
             if (downloadInfo.PackageSegments.Count > 0)

@@ -55,7 +55,7 @@ public class BackgroundService : IDisposable
             }
 
             var response = await _httpClient.GetStringAsync(apiUrl, cancellationToken);
-            var backgroundInfo = ParseBackgroundResponse(game, response);
+            var backgroundInfo = await ParseBackgroundResponseAsync(game, response, cancellationToken);
 
             if (backgroundInfo != null)
             {
@@ -393,7 +393,7 @@ public class BackgroundService : IDisposable
         return config?.GameBizIdentifier;
     }
 
-    private BackgroundInfo? ParseBackgroundResponse(GameInfo game, string response)
+    private async Task<BackgroundInfo?> ParseBackgroundResponseAsync(GameInfo game, string response, CancellationToken cancellationToken = default)
     {
         var config = _configurationService.GetConfiguration(game.Id);
         if (config?.BackgroundParser == null)
@@ -414,7 +414,7 @@ public class BackgroundService : IDisposable
             // Handle Kuro Games API format (requires two-step fetching)
             if (parser.ParserType == BackgroundParserType.Kuro)
             {
-                return ParseKuroBackgroundResponse(game, response, config, parser);
+                return await ParseKuroBackgroundResponseAsync(game, response, config, parser, cancellationToken);
             }
 
             using var doc = JsonDocument.Parse(response);
@@ -468,7 +468,7 @@ public class BackgroundService : IDisposable
         }
     }
 
-    private BackgroundInfo? ParseKuroBackgroundResponse(GameInfo game, string response, GameConfiguration config, BackgroundParserConfig parser)
+    private async Task<BackgroundInfo?> ParseKuroBackgroundResponseAsync(GameInfo game, string response, GameConfiguration config, BackgroundParserConfig parser, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -508,7 +508,7 @@ public class BackgroundService : IDisposable
             Log.Debug("Fetching Kuro background metadata from: {Url}", metadataUrl);
 
             // Fetch the background metadata
-            var metadataResponse = _httpClient.GetStringAsync(metadataUrl).GetAwaiter().GetResult();
+            var metadataResponse = await _httpClient.GetStringAsync(metadataUrl, cancellationToken);
             using var metadataDoc = JsonDocument.Parse(metadataResponse);
             var metadata = metadataDoc.RootElement;
 
