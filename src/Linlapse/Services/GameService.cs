@@ -369,6 +369,8 @@ public class GameService
                                       File.Exists(Path.Combine(path, "YuanShen.exe")),
             GameType.HonkaiStarRail => File.Exists(Path.Combine(path, "StarRail.exe")),
             GameType.ZenlessZoneZero => File.Exists(Path.Combine(path, "ZenlessZoneZero.exe")),
+            GameType.WutheringWaves => File.Exists(Path.Combine(path, "Wuthering Waves.exe")) ||
+                                       File.Exists(Path.Combine(path, "Client-Win64-Shipping.exe")),
             _ => false
         };
     }

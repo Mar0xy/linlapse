@@ -18,7 +18,7 @@ public partial class MainWindowViewModel
         
         // Get saved region preferences per game type
         var settings = _settingsService.Settings;
-        var gameTypes = new[] { GameType.HonkaiImpact3rd, GameType.GenshinImpact, GameType.HonkaiStarRail, GameType.ZenlessZoneZero };
+        var gameTypes = new[] { GameType.HonkaiImpact3rd, GameType.GenshinImpact, GameType.HonkaiStarRail, GameType.ZenlessZoneZero, GameType.WutheringWaves };
         
         foreach (var gameType in gameTypes)
         {
@@ -116,7 +116,7 @@ public partial class MainWindowViewModel
         
         // Get saved region preferences for each game type
         var settings = _settingsService.Settings;
-        var gameTypes = new[] { GameType.HonkaiImpact3rd, GameType.GenshinImpact, GameType.HonkaiStarRail, GameType.ZenlessZoneZero };
+        var gameTypes = new[] { GameType.HonkaiImpact3rd, GameType.GenshinImpact, GameType.HonkaiStarRail, GameType.ZenlessZoneZero, GameType.WutheringWaves };
         
         GameInfo? gameToSelect = null;
         
