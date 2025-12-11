@@ -190,22 +190,38 @@ linlapse/
 ├── src/
 │   └── Linlapse/
 │       ├── Models/           # Data models
-│       │   ├── GameInfo.cs           # Game information model
-│       │   ├── AppSettings.cs        # Application settings
-│       │   └── DownloadProgress.cs   # Progress tracking models
+│       │   ├── GameInfo.cs             # Game information model
+│       │   ├── GameConfiguration.cs    # Game configuration model
+│       │   ├── AppSettings.cs          # Application settings
+│       │   └── DownloadProgress.cs     # Progress tracking models
 │       ├── Services/         # Business logic services
-│       │   ├── SettingsService.cs      # Settings management
-│       │   ├── GameService.cs          # Game management
-│       │   ├── GameLauncherService.cs  # Wine/game launching
-│       │   ├── DownloadService.cs      # Multi-session downloads
-│       │   ├── InstallationService.cs  # Game installation
-│       │   ├── RepairService.cs        # File verification/repair
-│       │   ├── CacheService.cs         # Cache management
-│       │   ├── UpdateService.cs        # Update checking/applying
-│       │   └── GameSettingsService.cs  # Graphics/audio settings
+│       │   ├── SettingsService.cs            # Settings management
+│       │   ├── GameService.cs                # Game management
+│       │   ├── GameConfigurationService.cs   # Game configurations from JSON
+│       │   ├── GameLauncherService.cs        # Wine/game launching
+│       │   ├── WineRunnerService.cs          # Wine/Proton runner detection
+│       │   ├── DownloadService.cs            # Multi-session downloads
+│       │   ├── GameDownloadService.cs        # Game download orchestration
+│       │   ├── SophonDownloadService.cs      # Sophon protocol downloads
+│       │   ├── InstallationService.cs        # Game installation
+│       │   ├── RepairService.cs              # File verification/repair
+│       │   ├── CacheService.cs               # Cache management
+│       │   ├── UpdateService.cs              # Update checking/applying
+│       │   ├── GameSettingsService.cs        # Graphics/audio settings
+│       │   └── BackgroundService.cs          # Background image management
 │       ├── ViewModels/       # MVVM view models
+│       │   ├── MainWindowViewModel.cs        # Main window logic
+│       │   ├── GameCardViewModel.cs          # Game card display
+│       │   ├── GameSettingsViewModel.cs      # Game settings dialog
+│       │   ├── SettingsViewModel.cs          # Application settings
+│       │   └── WineRunnerDialogViewModel.cs  # Wine runner selection
 │       ├── Views/            # Avalonia XAML views
-│       └── Assets/           # Application resources
+│       │   ├── MainWindow.axaml              # Main window UI
+│       │   └── Controls/
+│       │       └── BackgroundPlayer.cs       # Video background player
+│       ├── Converters/       # Value converters for UI bindings
+│       ├── Assets/           # Application resources
+│       └── Program.cs        # Application entry point
 ├── README.md
 ├── LICENSE
 └── Linlapse.sln
