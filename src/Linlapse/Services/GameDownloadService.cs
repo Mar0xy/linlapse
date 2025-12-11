@@ -305,22 +305,46 @@ public partial class GameDownloadService : IDisposable
 
                 // Check if segment already exists and is valid (for resume support)
                 bool segmentAlreadyComplete = false;
-                if (File.Exists(segmentPath) && !string.IsNullOrEmpty(segment.Md5))
+                if (File.Exists(segmentPath))
                 {
                     var existingFileInfo = new FileInfo(segmentPath);
-                    if (existingFileInfo.Length == segment.Size)
+                    
+                    // For files with MD5, verify integrity
+                    if (!string.IsNullOrEmpty(segment.Md5))
                     {
-                        var isValid = await _downloadService.VerifyFileHashAsync(
-                            segmentPath,
-                            segment.Md5,
-                            System.Security.Cryptography.HashAlgorithmName.MD5);
-                        
-                        if (isValid)
+                        if (existingFileInfo.Length == segment.Size)
                         {
-                            Log.Information("Segment {Part}/{Total} already downloaded and verified, skipping", 
-                                segment.PartNumber, segments.Count);
-                            segmentAlreadyComplete = true;
+                            var isValid = await _downloadService.VerifyFileHashAsync(
+                                segmentPath,
+                                segment.Md5,
+                                System.Security.Cryptography.HashAlgorithmName.MD5);
+                            
+                            if (isValid)
+                            {
+                                Log.Information("Segment {Part}/{Total} already downloaded and verified, skipping", 
+                                    segment.PartNumber, segments.Count);
+                                segmentAlreadyComplete = true;
+                            }
+                            else
+                            {
+                                Log.Warning("Segment {Part}/{Total} exists but MD5 verification failed, will re-download", 
+                                    segment.PartNumber, segments.Count);
+                                File.Delete(segmentPath);
+                            }
                         }
+                        else
+                        {
+                            Log.Warning("Segment {Part}/{Total} exists but size mismatch (expected {Expected}, got {Actual}), will re-download", 
+                                segment.PartNumber, segments.Count, segment.Size, existingFileInfo.Length);
+                            File.Delete(segmentPath);
+                        }
+                    }
+                    // For files without MD5 (shouldn't happen, but be defensive), check size only
+                    else if (segment.Size > 0 && existingFileInfo.Length == segment.Size)
+                    {
+                        Log.Information("Segment {Part}/{Total} already downloaded (size match, no MD5), skipping", 
+                            segment.PartNumber, segments.Count);
+                        segmentAlreadyComplete = true;
                     }
                 }
 
