@@ -141,7 +141,17 @@ public class GameLauncherService
     /// Check if a game requires Jadeite to run
     /// </summary>
     public static bool RequiresJadeite(GameType gameType) =>
-        gameType is GameType.HonkaiStarRail or GameType.HonkaiImpact3rd;
+        gameType is GameType.HonkaiStarRail or GameType.HonkaiImpact3rd or GameType.WutheringWaves;
+
+    /// <summary>
+    /// Get default launch arguments for a game type
+    /// </summary>
+    private static string GetDefaultLaunchArgs(GameType gameType) =>
+        gameType switch
+        {
+            GameType.WutheringWaves => "-dx11",
+            _ => string.Empty
+        };
 
     public async Task<bool> LaunchGameAsync(string gameId)
     {
@@ -208,6 +218,7 @@ public class GameLauncherService
             GameType.GenshinImpact => FindExecutable(basePath, "GenshinImpact.exe", "YuanShen.exe"),
             GameType.HonkaiStarRail => FindExecutable(basePath, "StarRail.exe", "Games/StarRail.exe"),
             GameType.ZenlessZoneZero => FindExecutable(basePath, "ZenlessZoneZero.exe"),
+            GameType.WutheringWaves => FindExecutable(basePath, "Client/Binaries/Win64/Client-Win64-Shipping.exe", "Wuthering Waves.exe"),
             GameType.Custom => game.ExecutablePath,
             _ => null
         };
@@ -298,6 +309,12 @@ public class GameLauncherService
 
         // Determine if we need to use Jadeite for this game
         var useJadeite = RequiresJadeite(game.GameType);
+        
+        // Get default launch arguments for the game type
+        var defaultArgs = GetDefaultLaunchArgs(game.GameType);
+        var customArgs = gameSettings?.CustomLaunchArgs ?? "";
+        var allArgs = string.IsNullOrEmpty(customArgs) ? defaultArgs : $"{defaultArgs} {customArgs}".Trim();
+        
         string arguments;
         
         if (useProtonScript)
@@ -306,7 +323,7 @@ public class GameLauncherService
             if (useJadeite && IsJadeiteAvailable())
             {
                 var jadeitePath = GetJaditePath();
-                arguments = $"run \"{jadeitePath}\" \"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+                arguments = $"run \"{jadeitePath}\" \"{executablePath}\" {allArgs}";
                 Log.Information("Using Jadeite launcher with Proton script for {Game}", game.DisplayName);
             }
             else
@@ -315,25 +332,25 @@ public class GameLauncherService
                 {
                     Log.Warning("Jadeite is required for {Game} but not installed. Download it from Settings.", game.DisplayName);
                 }
-                arguments = $"run \"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+                arguments = $"run \"{executablePath}\" {allArgs}";
             }
         }
         else if (useJadeite && IsJadeiteAvailable())
         {
             var jadeitePath = GetJaditePath();
             // Launch with Jadeite: wine jadeite.exe "game_executable.exe"
-            arguments = $"\"{jadeitePath}\" \"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+            arguments = $"\"{jadeitePath}\" \"{executablePath}\" {allArgs}";
             Log.Information("Using Jadeite launcher for {Game}", game.DisplayName);
         }
         else if (useJadeite && !IsJadeiteAvailable())
         {
             Log.Warning("Jadeite is required for {Game} but not installed. Download it from Settings.", game.DisplayName);
             // Still try to launch, but it may not work
-            arguments = $"\"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+            arguments = $"\"{executablePath}\" {allArgs}";
         }
         else
         {
-            arguments = $"\"{executablePath}\" {gameSettings?.CustomLaunchArgs ?? ""}";
+            arguments = $"\"{executablePath}\" {allArgs}";
         }
 
         var startInfo = new ProcessStartInfo
@@ -359,6 +376,13 @@ public class GameLauncherService
 
         startInfo.Environment["WINEDLLOVERRIDES"] = "mscoree,mshtml=";
         startInfo.Environment["DXVK_HUD"] = "compiler";
+        
+        // Game-specific environment variables
+        if (game.GameType == GameType.WutheringWaves)
+        {
+            // Add Kuro SDK override to the existing WINEDLLOVERRIDES
+            startInfo.Environment["WINEDLLOVERRIDES"] = "mscoree,mshtml=;KRSDKExternal.exe=d";
+        }
         
         // Proton-specific environment variables
         if (isProton)

@@ -17,8 +17,8 @@ public class UpdateService : IDisposable
     private readonly GameService _gameService;
     private readonly DownloadService _downloadService;
     private readonly InstallationService _installationService;
+    private readonly GameConfigurationService _configurationService;
 
-    // Common version prefixes to strip during normalization (ordered by specificity)
     private static readonly string[] VersionPrefixes = { "version", "ver", "v" };
 
     public event EventHandler<UpdateInfo>? UpdateAvailable;
@@ -29,12 +29,20 @@ public class UpdateService : IDisposable
     public UpdateService(
         GameService gameService,
         DownloadService downloadService,
-        InstallationService installationService)
+        InstallationService installationService,
+        GameConfigurationService configurationService)
     {
         _gameService = gameService;
         _downloadService = downloadService;
         _installationService = installationService;
-        _httpClient = new HttpClient();
+        _configurationService = configurationService;
+        
+        // Configure HttpClient with automatic decompression for gzip/deflate responses
+        var handler = new HttpClientHandler
+        {
+            AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+        };
+        _httpClient = new HttpClient(handler);
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
     }
 
@@ -503,34 +511,7 @@ public class UpdateService : IDisposable
 
     private string? GetGameApiUrl(GameInfo game)
     {
-        // These are placeholder URLs - real implementation would use actual game API endpoints
-        return game.GameType switch
-        {
-            GameType.HonkaiImpact3rd => game.Region switch
-            {
-                GameRegion.Global => "https://sdk-os-static.mihoyo.com/bh3_global/mdk/launcher/api/resource?key=dpz65xJ3&launcher_id=10",
-                GameRegion.SEA => "https://sdk-os-static.mihoyo.com/bh3_global/mdk/launcher/api/resource?key=tEGNtVhN&launcher_id=9",
-                _ => null
-            },
-            GameType.GenshinImpact => game.Region switch
-            {
-                GameRegion.Global => "https://sdk-os-static.mihoyo.com/hk4e_global/mdk/launcher/api/resource?key=gcStgarh&launcher_id=10",
-                GameRegion.China => "https://sdk-static.mihoyo.com/hk4e_cn/mdk/launcher/api/resource?key=eYd89JmJ&launcher_id=18",
-                _ => null
-            },
-            GameType.HonkaiStarRail => game.Region switch
-            {
-                GameRegion.Global => "https://hkrpg-launcher-static.hoyoverse.com/hkrpg_global/mdk/launcher/api/resource?key=vplOVX8Vn7cwG8yb&launcher_id=35",
-                GameRegion.China => "https://api-launcher.mihoyo.com/hkrpg_cn/mdk/launcher/api/resource?key=6KcVuOkbcqjJomjZ&launcher_id=33",
-                _ => null
-            },
-            GameType.ZenlessZoneZero => game.Region switch
-            {
-                GameRegion.Global => "https://sg-hyp-api.hoyoverse.com/hyp/hyp-connect/api/getGamePackages?launcher_id=VYTpXlbWo8",
-                _ => null
-            },
-            _ => null
-        };
+        return _configurationService.GetApiUrl(game.Id);
     }
 
     private UpdateInfo? ParseUpdateResponse(GameInfo game, string response)

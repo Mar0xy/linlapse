@@ -7,22 +7,24 @@
   <img src="https://img.shields.io/badge/License-MIT-orange" alt="License"/>
 </p>
 
-**Linlapse** is a Linux game launcher inspired by [Collapse Launcher](https://github.com/CollapseLauncher/Collapse), designed to manage and launch miHoYo/HoYoverse games on Linux using Wine/Proton.
+**Linlapse** is a Linux game launcher inspired by [Collapse Launcher](https://github.com/CollapseLauncher/Collapse), designed to manage and launch Windows games on Linux using Wine/Proton. Currently supports HoYoverse games (Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, and Honkai Impact 3rd), with an extensible architecture for adding support for other game publishers.
 
 ## Features
 
 ### Game Management
-- 🎮 **Multi-Game Support**: Manage Honkai Impact 3rd, Genshin Impact, Honkai: Star Rail, and Zenless Zone Zero
+- 🎮 **Multi-Game Support**: Manage multiple games from various publishers
+- 🏢 **HoYoverse Games**: Full support for Honkai Impact 3rd, Genshin Impact, Honkai: Star Rail, and Zenless Zone Zero
 - 🔍 **Auto-Detection**: Automatically scan and detect installed games
 - 📊 **Game Status Tracking**: Track installation state, version, and play time
+- 🔧 **Extensible Architecture**: Easy to add support for games from other publishers
 
 ### Download & Installation
-- 📥 **Game Downloads**: Download games directly from official miHoYo/HoYoverse APIs
+- 📥 **Game Downloads**: Download games directly from official publisher APIs
 - 🚀 **Multi-Session Downloads**: Fast parallel downloads with resume support
-- 📦 **Archive Extraction**: Support for ZIP archive extraction
+- 📦 **Archive Extraction**: Support for ZIP and other archive formats
 - ⏸️ **Pause/Resume/Cancel**: Full control over downloads with cancellation support
 - 🔄 **Speed Limiting**: Configurable download speed limits
-- 🎙️ **Voice Pack Selection**: Choose voice language packs during installation
+- 🎙️ **Voice Pack Selection**: Choose voice language packs during installation (where supported)
 - ✅ **Download Verification**: MD5 hash verification of downloaded files
 
 ### Game Repair & Verification
@@ -31,10 +33,10 @@
 - 📋 **Manifest Support**: Parse and verify against game manifests (pkg_version)
 
 ### Update Management
-- 🔄 **Update Checking**: Check for game updates via official APIs
-- 📥 **Delta Patches**: Support for smaller delta patch updates
+- 🔄 **Update Checking**: Check for game updates via official publisher APIs
+- 📥 **Delta Patches**: Support for smaller delta patch updates (where available)
 - 📦 **Full Updates**: Fall back to full package downloads when needed
-- ⏬ **Preloading**: Download upcoming updates before they release
+- ⏬ **Preloading**: Download upcoming updates before they release (where supported)
 
 ### Cache Management
 - 🗑️ **Cache Clearing**: Clear game caches to free disk space
@@ -54,10 +56,21 @@
 
 ### User Interface
 - 🎨 **Modern UI**: Dark-themed, modern interface inspired by Collapse Launcher
-- 🖼️ **Dynamic Backgrounds**: Game-specific background images fetched from official APIs
+- 🖼️ **Dynamic Backgrounds**: Game-specific background images fetched from official APIs (where available)
 - 🎬 **Video Background Support**: Framework ready for video backgrounds (requires LibVLC)
 - 📝 **Status Updates**: Real-time progress and status information
 - 📊 **Progress Tracking**: Visual progress bars for downloads and operations
+
+## Architecture
+
+Linlapse is built with an extensible architecture that separates game-specific logic from core functionality:
+
+- **Game Configuration Service**: Centralized game configurations stored in JSON, making it easy to add new games
+- **Company-Agnostic Services**: Core services (download, update, repair) work with any game
+- **API Abstraction**: Publisher-specific APIs are configured per-game, not hardcoded
+- **Modular Design**: Services are loosely coupled and can be extended independently
+
+This design makes it straightforward to add support for games from other publishers beyond HoYoverse.
 
 ## System Requirements
 
@@ -68,6 +81,21 @@
 - **Optional**: libvlc (for video backgrounds)
 
 ## Installation
+
+### AppImage (Recommended)
+
+Download the latest AppImage from the [Releases](https://github.com/Mar0xy/linlapse/releases) page:
+
+```bash
+# Download AppImage
+wget https://github.com/Mar0xy/linlapse/releases/latest/download/Linlapse-x86_64.AppImage
+
+# Make it executable
+chmod +x Linlapse-x86_64.AppImage
+
+# Run
+./Linlapse-x86_64.AppImage
+```
 
 ### From Source
 
@@ -215,4 +243,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Disclaimer
 
-This project is **NOT AFFILIATED** with miHoYo (miHoYo Co., Ltd.) or HoYoverse (COGNOSPHERE PTE. LTD.) by any means. This is an open-source community project.
+This project is **NOT AFFILIATED** with any game publishers or companies whose games are supported by this launcher. Linlapse is an open-source community project that provides a convenient way to manage and launch Windows games on Linux. All game content, trademarks, and copyrights belong to their respective owners.
+
+Currently supported publishers:
+- HoYoverse (COGNOSPHERE PTE. LTD.) / miHoYo Co., Ltd.

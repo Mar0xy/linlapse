@@ -18,9 +18,9 @@ public partial class GameDownloadService : IDisposable
     private readonly DownloadService _downloadService;
     private readonly InstallationService _installationService;
     private readonly SettingsService _settingsService;
+    private readonly GameConfigurationService _configurationService;
     private SophonDownloadService? _sophonDownloadService;
 
-    // Regex for detecting multi-part archive extensions (e.g., .001, .002, .0001, etc.)
     [GeneratedRegex(@"^\.(\d+)$", RegexOptions.Compiled)]
     private static partial Regex MultiPartExtensionRegex();
 
@@ -33,22 +33,27 @@ public partial class GameDownloadService : IDisposable
         GameService gameService,
         DownloadService downloadService,
         InstallationService installationService,
-        SettingsService settingsService)
+        SettingsService settingsService,
+        GameConfigurationService configurationService)
     {
         _gameService = gameService;
         _downloadService = downloadService;
         _installationService = installationService;
         _settingsService = settingsService;
-        _httpClient = new HttpClient();
+        _configurationService = configurationService;
+        
+        // Configure HttpClient with automatic decompression for gzip/deflate responses
+        var handler = new HttpClientHandler
+        {
+            AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+        };
+        _httpClient = new HttpClient(handler);
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "Linlapse/1.0");
     }
     
-    /// <summary>
-    /// Gets or creates the SophonDownloadService instance
-    /// </summary>
     private SophonDownloadService GetSophonService()
     {
-        return _sophonDownloadService ??= new SophonDownloadService(_settingsService, _gameService);
+        return _sophonDownloadService ??= new SophonDownloadService(_settingsService, _gameService, _configurationService);
     }
 
     /// <summary>
@@ -73,7 +78,7 @@ public partial class GameDownloadService : IDisposable
             }
 
             var response = await _httpClient.GetStringAsync(apiUrl, cancellationToken);
-            var downloadInfo = ParseDownloadResponse(game, response);
+            var downloadInfo = await ParseDownloadResponseAsync(game, response, cancellationToken);
 
             if (downloadInfo != null)
             {
@@ -242,6 +247,10 @@ public partial class GameDownloadService : IDisposable
             downloadProgress.TotalFiles = segments.Count;
             Log.Information("Downloading {Count} package segment(s) for {GameId}", segments.Count, gameId);
 
+            // Check if this is a direct file download (Kuro Games style) vs archive download
+            var config = _configurationService.GetConfiguration(gameId);
+            bool isDirectDownload = config?.DownloadParser?.ParserType == DownloadParserType.Kuro;
+
             for (int i = 0; i < segments.Count; i++)
             {
                 var segment = segments[i];
@@ -258,7 +267,32 @@ public partial class GameDownloadService : IDisposable
                     originalFileName = $"game_package_part{segment.PartNumber}{extension}";
                 }
 
-                var segmentPath = Path.Combine(tempDir, originalFileName);
+                // For direct downloads (Kuro), use the stored relative path to preserve directory structure
+                string segmentPath;
+                
+                if (isDirectDownload && !string.IsNullOrEmpty(segment.RelativePath))
+                {
+                    // Use the relative path from the segment (extracted from index file)
+                    // Normalize path separators for the current OS
+                    var relativeFilePath = segment.RelativePath.Replace('/', Path.DirectorySeparatorChar);
+                    
+                    segmentPath = Path.Combine(installPath, relativeFilePath);
+                    
+                    // Ensure the directory exists
+                    var directory = Path.GetDirectoryName(segmentPath);
+                    if (!string.IsNullOrEmpty(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+                    
+                    downloadProgress.CurrentFile = relativeFilePath;
+                    Log.Debug("Direct download to: {RelativePath}", relativeFilePath);
+                }
+                else
+                {
+                    // Archive download - use temp directory
+                    segmentPath = Path.Combine(tempDir, originalFileName);
+                }
 
                 var segmentProgress = new Progress<DownloadProgress>(dp =>
                 {
@@ -271,22 +305,46 @@ public partial class GameDownloadService : IDisposable
 
                 // Check if segment already exists and is valid (for resume support)
                 bool segmentAlreadyComplete = false;
-                if (File.Exists(segmentPath) && !string.IsNullOrEmpty(segment.Md5))
+                if (File.Exists(segmentPath))
                 {
                     var existingFileInfo = new FileInfo(segmentPath);
-                    if (existingFileInfo.Length == segment.Size)
+                    
+                    // For files with MD5, verify integrity
+                    if (!string.IsNullOrEmpty(segment.Md5))
                     {
-                        var isValid = await _downloadService.VerifyFileHashAsync(
-                            segmentPath,
-                            segment.Md5,
-                            System.Security.Cryptography.HashAlgorithmName.MD5);
-                        
-                        if (isValid)
+                        if (existingFileInfo.Length == segment.Size)
                         {
-                            Log.Information("Segment {Part}/{Total} already downloaded and verified, skipping", 
-                                segment.PartNumber, segments.Count);
-                            segmentAlreadyComplete = true;
+                            var isValid = await _downloadService.VerifyFileHashAsync(
+                                segmentPath,
+                                segment.Md5,
+                                System.Security.Cryptography.HashAlgorithmName.MD5);
+                            
+                            if (isValid)
+                            {
+                                Log.Information("Segment {Part}/{Total} already downloaded and verified, skipping", 
+                                    segment.PartNumber, segments.Count);
+                                segmentAlreadyComplete = true;
+                            }
+                            else
+                            {
+                                Log.Warning("Segment {Part}/{Total} exists but MD5 verification failed, will re-download", 
+                                    segment.PartNumber, segments.Count);
+                                File.Delete(segmentPath);
+                            }
                         }
+                        else
+                        {
+                            Log.Warning("Segment {Part}/{Total} exists but size mismatch (expected {Expected}, got {Actual}), will re-download", 
+                                segment.PartNumber, segments.Count, segment.Size, existingFileInfo.Length);
+                            File.Delete(segmentPath);
+                        }
+                    }
+                    // For files without MD5 (shouldn't happen, but be defensive), check size only
+                    else if (segment.Size > 0 && existingFileInfo.Length == segment.Size)
+                    {
+                        Log.Information("Segment {Part}/{Total} already downloaded (size match, no MD5), skipping", 
+                            segment.PartNumber, segments.Count);
+                        segmentAlreadyComplete = true;
                     }
                 }
 
@@ -381,11 +439,30 @@ public partial class GameDownloadService : IDisposable
             downloadProgress.State = GameDownloadState.Verifying;
             progress?.Report(downloadProgress);
 
+            Directory.CreateDirectory(installPath);
+
+            // For direct downloads (Kuro style), files are already in place - skip extraction
+            if (isDirectDownload)
+            {
+                Log.Information("Direct download complete - files already in place at: {Path}", installPath);
+                
+                // Update game info - UpdateGameInstallPath will set the state based on whether
+                // the game executable exists
+                _gameService.UpdateGameInstallPath(gameId, installPath);
+                game.Version = downloadInfo.Version;
+
+                downloadProgress.State = GameDownloadState.Completed;
+                progress?.Report(downloadProgress);
+                GameInstallCompleted?.Invoke(this, gameId);
+
+                Log.Information("Game installed successfully: {GameId} at {Path}", gameId, installPath);
+                return true;
+            }
+
+            // For archive downloads, proceed with extraction
             // Extract/Install
             downloadProgress.State = GameDownloadState.Extracting;
             progress?.Report(downloadProgress);
-
-            Directory.CreateDirectory(installPath);
 
             // Separate multi-part archives from regular archives
             // Multi-part archives have extensions like .zip.001, .zip.002, etc.
@@ -581,21 +658,7 @@ public partial class GameDownloadService : IDisposable
 
     private string? GetGameApiUrl(GameInfo game)
     {
-        // Use the new HoYoPlay API endpoints for game packages
-        // These provide consistent download information across all games
-        var launcherId = game.Region switch
-        {
-            GameRegion.Global => "VYTpXlbWo8",  // Global/OS launcher
-            GameRegion.China => "jGHBHlcOq1",   // CN launcher
-            GameRegion.SEA => "VYTpXlbWo8",    // SEA uses global
-            _ => "VYTpXlbWo8"
-        };
-
-        var baseUrl = game.Region == GameRegion.China
-            ? "https://hyp-api.mihoyo.com"
-            : "https://sg-hyp-api.hoyoverse.com";
-
-        return $"{baseUrl}/hyp/hyp-connect/api/getGamePackages?launcher_id={launcherId}";
+        return _configurationService.GetApiUrl(game.Id);
     }
 
     private string GetGameBizFromType(GameInfo game)
@@ -610,10 +673,17 @@ public partial class GameDownloadService : IDisposable
         };
     }
 
-    private GameDownloadInfo? ParseDownloadResponse(GameInfo game, string response)
+    private async Task<GameDownloadInfo?> ParseDownloadResponseAsync(GameInfo game, string response, CancellationToken cancellationToken = default)
     {
         try
         {
+            // Check if this is a Kuro Games response
+            var config = _configurationService.GetConfiguration(game.Id);
+            if (config?.DownloadParser?.ParserType == DownloadParserType.Kuro)
+            {
+                return await ParseKuroDownloadResponseAsync(game, response, config, cancellationToken);
+            }
+
             using var doc = JsonDocument.Parse(response);
             var root = doc.RootElement;
 
@@ -625,52 +695,7 @@ public partial class GameDownloadService : IDisposable
                 GameId = game.Id
             };
 
-            // Parse game package info
-            if (data.TryGetProperty("game", out var gameData))
-            {
-                if (gameData.TryGetProperty("latest", out var latest))
-                {
-                    downloadInfo.Version = latest.GetProperty("version").GetString() ?? "";
-
-                    if (latest.TryGetProperty("path", out var path))
-                    {
-                        downloadInfo.DownloadUrl = path.GetString() ?? "";
-                    }
-
-                    if (latest.TryGetProperty("size", out var size))
-                    {
-                        downloadInfo.TotalSize = GetInt64FromElement(size);
-                    }
-
-                    if (latest.TryGetProperty("package_size", out var packageSize))
-                    {
-                        downloadInfo.PackageSize = GetInt64FromElement(packageSize);
-                    }
-
-                    if (latest.TryGetProperty("md5", out var md5))
-                    {
-                        downloadInfo.PackageMd5 = md5.GetString();
-                    }
-
-                    // Parse voice packs
-                    if (latest.TryGetProperty("voice_packs", out var voicePacks))
-                    {
-                        foreach (var vp in voicePacks.EnumerateArray())
-                        {
-                            var voicePack = new VoicePackDownloadInfo
-                            {
-                                Language = vp.GetProperty("language").GetString() ?? "",
-                                DownloadUrl = vp.TryGetProperty("path", out var vpPath) ? vpPath.GetString() ?? "" : "",
-                                Size = vp.TryGetProperty("size", out var vpSize) ? GetInt64FromElement(vpSize) : 0,
-                                Md5 = vp.TryGetProperty("md5", out var vpMd5) ? vpMd5.GetString() : null
-                            };
-                            downloadInfo.VoicePacks.Add(voicePack);
-                        }
-                    }
-                }
-            }
-
-            // Alternative format for newer APIs (HoYoPlay API)
+            // Try newer HoYoPlay API format first (game_packages)
             if (data.TryGetProperty("game_packages", out var gamePackages))
             {
                 var targetBiz = GetGameBizFromType(game);
@@ -745,6 +770,54 @@ public partial class GameDownloadService : IDisposable
                         break; // Found our game
                     }
                 }
+                
+                // Return the result from game_packages parsing
+                return downloadInfo;
+            }
+
+            // Fallback to old SDK API format (game.latest) - only if game_packages not found
+            if (data.TryGetProperty("game", out var gameData))
+            {
+                if (gameData.TryGetProperty("latest", out var latest))
+                {
+                    downloadInfo.Version = latest.GetProperty("version").GetString() ?? "";
+
+                    if (latest.TryGetProperty("path", out var path))
+                    {
+                        downloadInfo.DownloadUrl = path.GetString() ?? "";
+                    }
+
+                    if (latest.TryGetProperty("size", out var size))
+                    {
+                        downloadInfo.TotalSize = GetInt64FromElement(size);
+                    }
+
+                    if (latest.TryGetProperty("package_size", out var packageSize))
+                    {
+                        downloadInfo.PackageSize = GetInt64FromElement(packageSize);
+                    }
+
+                    if (latest.TryGetProperty("md5", out var md5))
+                    {
+                        downloadInfo.PackageMd5 = md5.GetString();
+                    }
+
+                    // Parse voice packs
+                    if (latest.TryGetProperty("voice_packs", out var voicePacks))
+                    {
+                        foreach (var vp in voicePacks.EnumerateArray())
+                        {
+                            var voicePack = new VoicePackDownloadInfo
+                            {
+                                Language = vp.GetProperty("language").GetString() ?? "",
+                                DownloadUrl = vp.TryGetProperty("path", out var vpPath) ? vpPath.GetString() ?? "" : "",
+                                Size = vp.TryGetProperty("size", out var vpSize) ? GetInt64FromElement(vpSize) : 0,
+                                Md5 = vp.TryGetProperty("md5", out var vpMd5) ? vpMd5.GetString() : null
+                            };
+                            downloadInfo.VoicePacks.Add(voicePack);
+                        }
+                    }
+                }
             }
 
             return downloadInfo;
@@ -752,6 +825,165 @@ public partial class GameDownloadService : IDisposable
         catch (Exception ex)
         {
             Log.Warning(ex, "Failed to parse download response for {GameId}", game.Id);
+            return null;
+        }
+    }
+
+    private async Task<GameDownloadInfo?> ParseKuroDownloadResponseAsync(GameInfo game, string response, GameConfiguration config, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(response);
+            var root = doc.RootElement;
+
+            var parser = config.DownloadParser;
+            if (parser == null)
+                return null;
+
+            // Navigate to data root (supports dot notation for nested paths)
+            if (!string.IsNullOrEmpty(parser.DataRootPath))
+            {
+                var pathParts = parser.DataRootPath.Split('.');
+                foreach (var part in pathParts)
+                {
+                    if (!root.TryGetProperty(part, out root))
+                    {
+                        Log.Warning("No {Path} found in Kuro download response for {GameId}", parser.DataRootPath, game.Id);
+                        return null;
+                    }
+                }
+            }
+
+            var downloadInfo = new GameDownloadInfo
+            {
+                GameId = game.Id
+            };
+
+            // Get version
+            if (parser.FieldPaths.TryGetValue("version", out var versionPath) &&
+                root.TryGetProperty(versionPath, out var version))
+            {
+                downloadInfo.Version = version.GetString() ?? "";
+            }
+
+            // Get size (unCompressSize for Kuro Games)
+            if (parser.FieldPaths.TryGetValue("size", out var sizePath) &&
+                root.TryGetProperty(sizePath, out var sizeElement))
+            {
+                downloadInfo.TotalSize = GetInt64FromElement(sizeElement);
+            }
+
+            // Get indexFile path
+            if (!parser.FieldPaths.TryGetValue("indexFile", out var indexPath) ||
+                !root.TryGetProperty(indexPath, out var indexFile))
+            {
+                Log.Warning("No indexFile found in Kuro download response for {GameId}", game.Id);
+                return null;
+            }
+
+            // Get baseUrl
+            if (!parser.FieldPaths.TryGetValue("baseUrl", out var basePath) ||
+                !root.TryGetProperty(basePath, out var baseUrl))
+            {
+                Log.Warning("No baseUrl found in Kuro download response for {GameId}", game.Id);
+                return null;
+            }
+
+            var indexFileStr = indexFile.GetString();
+            var baseUrlStr = baseUrl.GetString();
+
+            if (string.IsNullOrEmpty(indexFileStr) || string.IsNullOrEmpty(baseUrlStr))
+            {
+                Log.Warning("Empty indexFile or baseUrl for {GameId}", game.Id);
+                return null;
+            }
+
+            // Get the download base URL from config
+            if (!config.ApiEndpoints.TryGetValue("download_base_url", out var downloadBaseUrl))
+            {
+                Log.Warning("No download_base_url configured for {GameId}", game.Id);
+                return null;
+            }
+
+            // Fetch the index file to get the list of files
+            var indexUrl = $"{downloadBaseUrl}{indexFileStr}";
+            Log.Debug("Fetching Kuro index file from: {Url}", indexUrl);
+
+            var indexResponse = await _httpClient.GetStringAsync(indexUrl, cancellationToken);
+            
+            // Parse index file as JSON with "resource" array containing file objects
+            // Format: { "resource": [ { "dest": "path", "md5": "hash", "size": 123 }, ... ] }
+            using var indexDoc = JsonDocument.Parse(indexResponse);
+            var indexRoot = indexDoc.RootElement;
+            
+            if (!indexRoot.TryGetProperty("resource", out var resourceArray) || resourceArray.ValueKind != JsonValueKind.Array)
+            {
+                Log.Warning("No resource array found in Kuro index file for {GameId}", game.Id);
+                return null;
+            }
+            
+            int partNumber = 1;
+            long calculatedTotalSize = 0;
+
+            foreach (var fileObj in resourceArray.EnumerateArray())
+            {
+                // Each file object has: dest (path), md5, size
+                if (!fileObj.TryGetProperty("dest", out var destProp))
+                    continue;
+                    
+                var filePath = destProp.GetString();
+                if (string.IsNullOrEmpty(filePath))
+                    continue;
+
+                // Get MD5 and size if available
+                string? md5 = null;
+                long size = 0;
+                
+                if (fileObj.TryGetProperty("md5", out var md5Prop))
+                    md5 = md5Prop.GetString();
+                    
+                if (fileObj.TryGetProperty("size", out var sizeProp))
+                    size = GetInt64FromElement(sizeProp);
+
+                // Construct full URL: downloadBaseUrl + baseUrl + filePath
+                // Ensure proper URL formatting (no double slashes except after protocol)
+                var baseUrlPart = baseUrlStr.TrimEnd('/');
+                var filePathPart = filePath.TrimStart('/');
+                var fileUrl = $"{downloadBaseUrl}{baseUrlPart}/{filePathPart}";
+
+                var segment = new GamePackageSegment
+                {
+                    DownloadUrl = fileUrl,
+                    PartNumber = partNumber++,
+                    Size = size,
+                    Md5 = md5,
+                    // Store the relative file path so we can extract it later
+                    RelativePath = filePath
+                };
+                downloadInfo.PackageSegments.Add(segment);
+                calculatedTotalSize += size;
+            }
+            
+            // Update total size if we have a calculated value and it wasn't set from config
+            if (downloadInfo.TotalSize == 0 && calculatedTotalSize > 0)
+            {
+                downloadInfo.TotalSize = calculatedTotalSize;
+            }
+            
+            // Set first segment as primary download URL for backwards compatibility
+            if (downloadInfo.PackageSegments.Count > 0)
+            {
+                downloadInfo.DownloadUrl = downloadInfo.PackageSegments[0].DownloadUrl;
+            }
+
+            Log.Information("Parsed Kuro download info for {GameId}: Version={Version}, Segments={Count}",
+                game.Id, downloadInfo.Version, downloadInfo.PackageSegments.Count);
+
+            return downloadInfo;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to parse Kuro download response for {GameId}", game.Id);
             return null;
         }
     }
@@ -807,6 +1039,11 @@ public class GamePackageSegment
     public long Size { get; set; }
     public string? Md5 { get; set; }
     public int PartNumber { get; set; }
+    /// <summary>
+    /// Relative file path for direct downloads (e.g., Kuro Games)
+    /// Used to preserve directory structure when downloading individual files
+    /// </summary>
+    public string? RelativePath { get; set; }
 }
 
 /// <summary>

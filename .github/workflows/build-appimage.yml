@@ -1,0 +1,231 @@
+name: Build AppImage
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-appimage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libvlc-dev desktop-file-utils
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore src/Linlapse/Linlapse.csproj
+
+    - name: Build
+      run: dotnet build src/Linlapse/Linlapse.csproj -c Release --no-restore
+
+    - name: Publish for Linux x64
+      run: |
+        dotnet publish src/Linlapse/Linlapse.csproj \
+          -c Release \
+          -r linux-x64 \
+          --self-contained true \
+          -p:PublishSingleFile=false \
+          -p:PublishTrimmed=false \
+          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -o ./AppDir/usr/bin
+
+    - name: Copy libzstd native libraries
+      run: |
+        mkdir -p ./AppDir/usr/bin/Lib/linux-x64
+        
+        NUGET_PACKAGES="${HOME}/.nuget/packages"
+        cp "${NUGET_PACKAGES}/hi3helper.zstdnet/1.6.5/build/Lib/linux-x64/libzstd.so" ./AppDir/usr/bin/Lib/linux-x64/
+        cp "${NUGET_PACKAGES}/hi3helper.zstdnet/1.6.5/build/Lib/linux-x64/libzstd-bmi2.so" ./AppDir/usr/bin/Lib/linux-x64/
+        
+        echo "Copied libzstd libraries:"
+        ls -la ./AppDir/usr/bin/Lib/linux-x64/
+
+    - name: Set executable permissions
+      run: chmod +x ./AppDir/usr/bin/Linlapse
+
+    - name: Create AppDir structure
+      run: |
+        # Create necessary directories
+        mkdir -p ./AppDir/usr/share/applications
+        mkdir -p ./AppDir/usr/share/icons/hicolor/256x256/apps
+        mkdir -p ./AppDir/usr/share/metainfo
+        
+        # Create desktop file
+        cat > ./AppDir/usr/share/applications/io.github.mar0xy.linlapse.desktop << 'EOF'
+        [Desktop Entry]
+        Type=Application
+        Name=Linlapse
+        Comment=Linux Game Launcher for HoYoverse games and more
+        Exec=Linlapse
+        Icon=linlapse
+        Categories=Game;
+        Terminal=false
+        EOF
+        
+        # Get a simple icon (placeholder)
+        curl -L "https://drive.yuugi.dev/f/826c1d99eca94bfbbd29/?dl=1" -o ./AppDir/usr/share/icons/hicolor/256x256/apps/linlapse.png
+        
+        # Create AppStream metadata
+        cat > ./AppDir/usr/share/metainfo/linlapse.appdata.xml << 'EOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <component type="desktop-application">
+          <id>io.github.mar0xy.linlapse</id>
+          <metadata_license>MIT</metadata_license>
+          <project_license>MIT</project_license>
+          <name>Linlapse</name>
+          <summary>Linux Game Launcher</summary>
+          <description>
+            <p>
+              A cross-platform game launcher for Linux supporting multiple game publishers.
+              Currently supports HoYoverse games with an extensible architecture.
+            </p>
+          </description>
+          <url type="homepage">https://github.com/Mar0xy/linlapse</url>
+          <url type="bugtracker">https://github.com/Mar0xy/linlapse/issues</url>
+          <developer_name>Linlapse Contributors</developer_name>
+          <launchable type="desktop-id">linlapse.desktop</launchable>
+          <releases>
+            <release version="1.0.0" date="2024-01-01"/>
+          </releases>
+        </component>
+        EOF
+        
+        # Create AppRun script
+        cat > ./AppDir/AppRun << 'EOF'
+        #!/bin/bash
+        SELF=$(readlink -f "$0")
+        HERE=${SELF%/*}
+        export PATH="${HERE}/usr/bin:${PATH}"
+        export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+        cd "${HERE}/usr/bin"
+        exec "${HERE}/usr/bin/Linlapse" "$@"
+        EOF
+        
+        chmod +x ./AppDir/AppRun
+
+    - name: Download appimage-builder
+      run: |
+        wget https://github.com/Lord-Kamina/appimage-builder/releases/download/continuous/appimage-builder_x86_64-AppImage.tar
+        tar -xvf appimage-builder_x86_64-AppImage.tar --transform='s/.*\///'
+        mv appimage-builder-*-x86_64.AppImage appimage-builder-x86_64.AppImage
+        chmod +x appimage-builder-x86_64.AppImage
+
+    - name: Create AppImage recipe
+      run: |
+        cat > AppImageBuilder.yml << 'EOF'
+        version: 1
+        
+        AppDir:
+          path: ./AppDir
+          app_info:
+            id: io.github.mar0xy.linlapse
+            name: Linlapse
+            icon: linlapse
+            version: 1.0.0
+            exec: usr/bin/Linlapse
+          runtime:
+            env:
+              DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: '1'
+          
+          apt:
+            arch: amd64
+            allow_unauthenticated: true
+            sources:
+              - sourceline: 'deb http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse'
+              - sourceline: 'deb http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted universe multiverse'
+            include:
+              - libicu70
+              - libssl3
+              - zlib1g
+              - libgcc-s1
+              - libstdc++6
+              - libc6
+          
+          files:
+            exclude:
+              - usr/share/man
+              - usr/share/doc/*/README.*
+              - usr/share/doc/*/changelog.*
+              - usr/share/doc/*/NEWS.*
+              - usr/share/doc/*/TODO.*
+        
+        AppImage:
+          comp: zstd
+          arch: x86_64
+          file_name: Linlapse-x86_64.AppImage
+        EOF
+
+    - name: Build AppImage
+      run: |
+        ./appimage-builder-x86_64.AppImage --recipe AppImageBuilder.yml --skip-test
+      continue-on-error: true
+
+    - name: Alternative AppImage build
+      if: failure()
+      run: |
+        # If appimage-builder fails, create a simple AppImage manually
+        wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x appimagetool-x86_64.AppImage
+
+        mv ./AppDir/usr/share/applications/io.github.mar0xy.linlapse.desktop ./AppDir/usr/share/applications/linlapse.desktop
+
+        # Create symbolic links
+        ln -sf usr/share/applications/linlapse.desktop ./AppDir/linlapse.desktop
+        ln -sf usr/share/icons/hicolor/256x256/apps/linlapse.png ./AppDir/linlapse.png
+        
+        # Extract appimagetool
+        ./appimagetool-x86_64.AppImage --appimage-extract
+        
+        # Build AppImage
+        ./squashfs-root/AppRun ./AppDir Linlapse-x86_64.AppImage
+
+    - name: Verify AppImage was created
+      run: |
+        if [ -f "Linlapse-x86_64.AppImage" ]; then
+          echo "AppImage created successfully"
+          ls -lh Linlapse-x86_64.AppImage
+          chmod +x Linlapse-x86_64.AppImage
+        else
+          echo "AppImage not found!"
+          exit 1
+        fi
+
+    - name: Upload AppImage artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Linlapse-AppImage
+        path: Linlapse-x86_64.AppImage
+        retention-days: 4
+        if-no-files-found: error
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: Linlapse-x86_64.AppImage
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

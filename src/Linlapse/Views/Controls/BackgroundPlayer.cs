@@ -94,6 +94,7 @@ public class BackgroundPlayer : UserControl, IDisposable
                 Core.Initialize();
 
                 // Create LibVLC with options to minimize memory usage
+                // Added --avcodec-hw=none to prevent video converter errors with some formats
                 _sharedLibVLC = new LibVLC(
                     "--no-video-title-show",
                     "--no-snapshot-preview",
@@ -102,7 +103,8 @@ public class BackgroundPlayer : UserControl, IDisposable
                     "--skip-frames",
                     "--file-caching=1000",
                     "--network-caching=1000",
-                    "--live-caching=1000"
+                    "--live-caching=1000",
+                    "--no-spu"
                 );
 
                 _libVLCAvailable = true;

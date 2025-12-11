@@ -179,6 +179,17 @@ public class GameService
             GameType = GameType.ZenlessZoneZero,
             Region = GameRegion.China,
             State = GameState.NotInstalled
+        },
+        // Kuro Games
+        new()
+        {
+            Id = "ww-global",
+            Name = "wutheringwaves",
+            DisplayName = "Wuthering Waves",
+            GameType = GameType.WutheringWaves,
+            Region = GameRegion.Global,
+            Company = GameCompany.Kuro,
+            State = GameState.NotInstalled
         }
     };
 
@@ -358,6 +369,8 @@ public class GameService
                                       File.Exists(Path.Combine(path, "YuanShen.exe")),
             GameType.HonkaiStarRail => File.Exists(Path.Combine(path, "StarRail.exe")),
             GameType.ZenlessZoneZero => File.Exists(Path.Combine(path, "ZenlessZoneZero.exe")),
+            GameType.WutheringWaves => File.Exists(Path.Combine(path, "Wuthering Waves.exe")) ||
+                                       File.Exists(Path.Combine(path, "Client-Win64-Shipping.exe")),
             _ => false
         };
     }
