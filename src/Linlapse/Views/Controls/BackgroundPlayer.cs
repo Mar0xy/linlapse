@@ -104,7 +104,6 @@ public class BackgroundPlayer : UserControl, IDisposable
                     "--file-caching=1000",
                     "--network-caching=1000",
                     "--live-caching=1000",
-                    "--avcodec-hw=none",
                     "--no-spu"
                 );
 
