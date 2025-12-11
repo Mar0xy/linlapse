@@ -243,6 +243,52 @@ public class GameConfigurationService
                 IconApiUrl = "https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getGames?launcher_id=jGHBHlcOq1&language=zh-cn",
                 BackgroundParser = hoyoverseBackgroundParser,
                 DownloadParser = hoyoverseDownloadParser
+            },
+            ["ww-global"] = new()
+            {
+                Id = "ww-global",
+                Name = "wutheringwaves",
+                DisplayName = "Wuthering Waves",
+                GameType = GameType.WutheringWaves,
+                Region = GameRegion.Global,
+                Company = GameCompany.Kuro,
+                ApiUrl = "https://prod-alicdn-gamestarter.kurogame.com/launcher/game/G153/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/index.json",
+                SupportsSophonDownloads = false,
+                ExecutableNames = new List<string> { "Wuthering Waves.exe", "Client-Win64-Shipping.exe" },
+                GameBizIdentifier = "G153",
+                BackgroundApiUrl = "https://prod-alicdn-gamestarter.kurogame.com/launcher/launcher/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/G153/index.json",
+                ApiEndpoints = new Dictionary<string, string>
+                {
+                    { "background_base_url", "https://prod-alicdn-gamestarter.kurogame.com/launcher/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/G153/background/" },
+                    { "download_base_url", "https://hw-pcdownload-aws.aki-game.net/" }
+                },
+                BackgroundParser = new BackgroundParserConfig
+                {
+                    ParserType = BackgroundParserType.Kuro,
+                    DataRootPath = "functionCode",
+                    GameListPath = "", // Not used - single game response
+                    GameIdentifierField = "", // Not used
+                    BackgroundsArrayPath = "background", // Path to background string
+                    UrlFields = new Dictionary<string, string>
+                    {
+                        { "slogan", "slogan" }, // From background metadata JSON
+                        { "backgroundFile", "backgroundFile" } // From background metadata JSON
+                    }
+                },
+                DownloadParser = new DownloadParserConfig
+                {
+                    ParserType = DownloadParserType.Kuro,
+                    DataRootPath = "config",
+                    GameDataPath = "", // Not used for Kuro
+                    GamePackagesPath = "", // Not used for Kuro
+                    GameIdentifierField = "", // Not used for Kuro
+                    FieldPaths = new Dictionary<string, string>
+                    {
+                        { "version", "version" },
+                        { "indexFile", "indexFile" },
+                        { "baseUrl", "baseUrl" }
+                    }
+                }
             }
         };
     }

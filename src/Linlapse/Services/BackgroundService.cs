@@ -411,6 +411,12 @@ public class BackgroundService : IDisposable
 
         try
         {
+            // Handle Kuro Games API format (requires two-step fetching)
+            if (parser.ParserType == BackgroundParserType.Kuro)
+            {
+                return ParseKuroBackgroundResponse(game, response, config, parser);
+            }
+
             using var doc = JsonDocument.Parse(response);
             var root = doc.RootElement;
 
@@ -458,6 +464,99 @@ public class BackgroundService : IDisposable
         catch (Exception ex)
         {
             Log.Warning(ex, "Failed to parse background response for {GameId}", game.Id);
+            return null;
+        }
+    }
+
+    private BackgroundInfo? ParseKuroBackgroundResponse(GameInfo game, string response, GameConfiguration config, BackgroundParserConfig parser)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(response);
+            var root = doc.RootElement;
+
+            // Navigate to functionCode
+            if (!string.IsNullOrEmpty(parser.DataRootPath) && 
+                !root.TryGetProperty(parser.DataRootPath, out root))
+            {
+                Log.Warning("No {Path} found in Kuro launcher response for {GameId}", parser.DataRootPath, game.Id);
+                return null;
+            }
+
+            // Get the background string
+            if (!root.TryGetProperty(parser.BackgroundsArrayPath, out var backgroundString))
+            {
+                Log.Warning("No {Path} found in functionCode for {GameId}", parser.BackgroundsArrayPath, game.Id);
+                return null;
+            }
+
+            var backgroundId = backgroundString.GetString();
+            if (string.IsNullOrEmpty(backgroundId))
+            {
+                Log.Warning("Empty background string for {GameId}", game.Id);
+                return null;
+            }
+
+            // Construct the background metadata URL
+            if (!config.ApiEndpoints.TryGetValue("background_base_url", out var baseUrl))
+            {
+                Log.Warning("No background_base_url configured for {GameId}", game.Id);
+                return null;
+            }
+
+            var metadataUrl = $"{baseUrl}{backgroundId}/en.json";
+            Log.Debug("Fetching Kuro background metadata from: {Url}", metadataUrl);
+
+            // Fetch the background metadata
+            var metadataResponse = _httpClient.GetStringAsync(metadataUrl).GetAwaiter().GetResult();
+            using var metadataDoc = JsonDocument.Parse(metadataResponse);
+            var metadata = metadataDoc.RootElement;
+
+            var backgroundInfo = new BackgroundInfo
+            {
+                GameId = game.Id
+            };
+
+            // Extract slogan (theme image)
+            if (parser.UrlFields.TryGetValue("slogan", out var sloganPath) &&
+                metadata.TryGetProperty(sloganPath, out var sloganUrl))
+            {
+                var sloganUrlStr = sloganUrl.GetString();
+                if (!string.IsNullOrEmpty(sloganUrlStr))
+                {
+                    backgroundInfo.ThemeUrl = $"{baseUrl}{backgroundId}/{sloganUrlStr}";
+                }
+            }
+
+            // Extract background file (can be video or image)
+            if (parser.UrlFields.TryGetValue("backgroundFile", out var bgPath) &&
+                metadata.TryGetProperty(bgPath, out var bgFile))
+            {
+                var bgFileStr = bgFile.GetString();
+                if (!string.IsNullOrEmpty(bgFileStr))
+                {
+                    var bgUrl = $"{baseUrl}{backgroundId}/{bgFileStr}";
+                    backgroundInfo.Url = bgUrl;
+                    
+                    // Determine type from file extension
+                    var ext = Path.GetExtension(bgFileStr).ToLowerInvariant();
+                    if (ext == ".mp4" || ext == ".webm")
+                    {
+                        backgroundInfo.Type = BackgroundType.Video;
+                        backgroundInfo.VideoUrl = bgUrl;
+                    }
+                    else
+                    {
+                        backgroundInfo.Type = BackgroundType.Image;
+                    }
+                }
+            }
+
+            return backgroundInfo.Url != null ? backgroundInfo : null;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to parse Kuro background response for {GameId}", game.Id);
             return null;
         }
     }

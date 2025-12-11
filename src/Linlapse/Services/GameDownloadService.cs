@@ -599,6 +599,13 @@ public partial class GameDownloadService : IDisposable
     {
         try
         {
+            // Check if this is a Kuro Games response
+            var config = _configurationService.GetConfiguration(game.Id);
+            if (config?.DownloadParser?.ParserType == DownloadParserType.Kuro)
+            {
+                return ParseKuroDownloadResponse(game, response, config);
+            }
+
             using var doc = JsonDocument.Parse(response);
             var root = doc.RootElement;
 
@@ -740,6 +747,121 @@ public partial class GameDownloadService : IDisposable
         catch (Exception ex)
         {
             Log.Warning(ex, "Failed to parse download response for {GameId}", game.Id);
+            return null;
+        }
+    }
+
+    private GameDownloadInfo? ParseKuroDownloadResponse(GameInfo game, string response, GameConfiguration config)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(response);
+            var root = doc.RootElement;
+
+            var parser = config.DownloadParser;
+            if (parser == null)
+                return null;
+
+            // Navigate to data root (config)
+            if (!string.IsNullOrEmpty(parser.DataRootPath) && 
+                !root.TryGetProperty(parser.DataRootPath, out root))
+            {
+                Log.Warning("No {Path} found in Kuro download response for {GameId}", parser.DataRootPath, game.Id);
+                return null;
+            }
+
+            var downloadInfo = new GameDownloadInfo
+            {
+                GameId = game.Id
+            };
+
+            // Get version
+            if (parser.FieldPaths.TryGetValue("version", out var versionPath) &&
+                root.TryGetProperty(versionPath, out var version))
+            {
+                downloadInfo.Version = version.GetString() ?? "";
+            }
+
+            // Get indexFile path
+            if (!parser.FieldPaths.TryGetValue("indexFile", out var indexPath) ||
+                !root.TryGetProperty(indexPath, out var indexFile))
+            {
+                Log.Warning("No indexFile found in Kuro download response for {GameId}", game.Id);
+                return null;
+            }
+
+            // Get baseUrl
+            if (!parser.FieldPaths.TryGetValue("baseUrl", out var basePath) ||
+                !root.TryGetProperty(basePath, out var baseUrl))
+            {
+                Log.Warning("No baseUrl found in Kuro download response for {GameId}", game.Id);
+                return null;
+            }
+
+            var indexFileStr = indexFile.GetString();
+            var baseUrlStr = baseUrl.GetString();
+
+            if (string.IsNullOrEmpty(indexFileStr) || string.IsNullOrEmpty(baseUrlStr))
+            {
+                Log.Warning("Empty indexFile or baseUrl for {GameId}", game.Id);
+                return null;
+            }
+
+            // Get the download base URL from config
+            if (!config.ApiEndpoints.TryGetValue("download_base_url", out var downloadBaseUrl))
+            {
+                Log.Warning("No download_base_url configured for {GameId}", game.Id);
+                return null;
+            }
+
+            // Fetch the index file to get the list of files
+            var indexUrl = $"{downloadBaseUrl}{indexFileStr}";
+            Log.Debug("Fetching Kuro index file from: {Url}", indexUrl);
+
+            var indexResponse = _httpClient.GetStringAsync(indexUrl).GetAwaiter().GetResult();
+            var indexLines = indexResponse.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+            // Parse index file to create segments
+            // Format: each line is typically a file path
+            long totalSize = 0;
+            int partNumber = 1;
+
+            foreach (var line in indexLines)
+            {
+                var filePath = line.Trim();
+                if (string.IsNullOrEmpty(filePath))
+                    continue;
+
+                // Construct full URL: baseUrl + filePath
+                var fileUrl = $"{downloadBaseUrl}{baseUrlStr}/{filePath}";
+
+                var segment = new GamePackageSegment
+                {
+                    DownloadUrl = fileUrl,
+                    PartNumber = partNumber++,
+                    // Size and MD5 are not provided in the index, will be determined during download
+                    Size = 0,
+                    Md5 = null
+                };
+                downloadInfo.PackageSegments.Add(segment);
+            }
+
+            downloadInfo.TotalSize = totalSize; // Will be calculated during download
+            
+            // Set first segment as primary download URL for backwards compatibility
+            if (downloadInfo.PackageSegments.Count > 0)
+            {
+                downloadInfo.DownloadUrl = downloadInfo.PackageSegments[0].DownloadUrl;
+            }
+
+            Log.Information("Parsed Kuro download info for {GameId}: Version={Version}, Segments={Count}",
+                game.Id, downloadInfo.Version, downloadInfo.PackageSegments.Count);
+
+            return downloadInfo;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to parse Kuro download response for {GameId}", game.Id);
             return null;
         }
     }

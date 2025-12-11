@@ -75,6 +75,11 @@ public enum BackgroundParserType
     HoYoverse,
     
     /// <summary>
+    /// Kuro Games API format (requires two-step fetching)
+    /// </summary>
+    Kuro,
+    
+    /// <summary>
     /// Generic/custom parser - uses field paths directly
     /// </summary>
     Generic,
@@ -140,6 +145,11 @@ public enum DownloadParserType
     HoYoverse,
     
     /// <summary>
+    /// Kuro Games API format (requires index file resolution)
+    /// </summary>
+    Kuro,
+    
+    /// <summary>
     /// Generic/custom parser
     /// </summary>
     Generic,
@@ -159,6 +169,11 @@ public enum GameCompany
     /// miHoYo/HoYoverse (COGNOSPHERE PTE. LTD.) - Publisher of Genshin Impact, Honkai series, ZZZ
     /// </summary>
     HoYoverse,
+    
+    /// <summary>
+    /// Kuro Games - Publisher of Wuthering Waves, Punishing: Gray Raven
+    /// </summary>
+    Kuro,
     
     /// <summary>
     /// Custom or third-party games

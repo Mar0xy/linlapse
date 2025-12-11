@@ -179,6 +179,17 @@ public class GameService
             GameType = GameType.ZenlessZoneZero,
             Region = GameRegion.China,
             State = GameState.NotInstalled
+        },
+        // Kuro Games
+        new()
+        {
+            Id = "ww-global",
+            Name = "wutheringwaves",
+            DisplayName = "Wuthering Waves",
+            GameType = GameType.WutheringWaves,
+            Region = GameRegion.Global,
+            Company = GameCompany.Kuro,
+            State = GameState.NotInstalled
         }
     };
 

@@ -151,6 +151,7 @@ public enum GameType
     GenshinImpact,
     HonkaiStarRail,
     ZenlessZoneZero,
+    WutheringWaves,
     Custom
 }
 
