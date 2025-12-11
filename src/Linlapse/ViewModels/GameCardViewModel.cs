@@ -48,6 +48,7 @@ public partial class GameCardViewModel : ViewModelBase
         GameType.GenshinImpact => "⭐",
         GameType.HonkaiStarRail => "🚂",
         GameType.ZenlessZoneZero => "⚡",
+        GameType.WutheringWaves => "🌊",
         GameType.Custom => "🎮",
         _ => "🎯"
     };

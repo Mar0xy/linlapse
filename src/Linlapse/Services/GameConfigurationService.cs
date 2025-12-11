@@ -257,6 +257,7 @@ public class GameConfigurationService
                 ExecutableNames = new List<string> { "Wuthering Waves.exe", "Client-Win64-Shipping.exe" },
                 GameBizIdentifier = "G153",
                 BackgroundApiUrl = "https://prod-alicdn-gamestarter.kurogame.com/launcher/launcher/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/G153/index.json",
+                IconApiUrl = "https://i.imgur.com/WGjfF6C.png",
                 ApiEndpoints = new Dictionary<string, string>
                 {
                     { "background_base_url", "https://prod-alicdn-gamestarter.kurogame.com/launcher/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/G153/background/" },

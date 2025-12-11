@@ -303,6 +303,21 @@ public class BackgroundService : IDisposable
                 return null;
             }
 
+            // Check if this is a direct image URL (e.g., for Kuro games)
+            // Direct URLs typically end with image extensions or contain image hosting domains
+            if (apiUrl.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                apiUrl.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                apiUrl.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                apiUrl.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ||
+                apiUrl.Contains("imgur.com") ||
+                apiUrl.Contains("i.imgur.com"))
+            {
+                // Direct image URL - return as-is
+                Log.Debug("Using direct icon URL for {GameId}: {Url}", game.Id, apiUrl);
+                return apiUrl;
+            }
+
+            // API endpoint - fetch and parse response
             var response = await _httpClient.GetStringAsync(apiUrl, cancellationToken);
             return ParseGameIconUrl(game, response);
         }
