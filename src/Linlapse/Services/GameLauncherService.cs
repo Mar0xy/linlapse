@@ -339,7 +339,7 @@ public class GameLauncherService
         {
             var jadeitePath = GetJaditePath();
             // Launch with Jadeite: wine jadeite.exe "game_executable.exe"
-            arguments = $"\"{jadeitePath}\" \"{executablePath}\" {allArgs}";
+            arguments = $"\"{jadeitePath}\" \"{executablePath}\" -- {allArgs}";
             Log.Information("Using Jadeite launcher for {Game}", game.DisplayName);
         }
         else if (useJadeite && !IsJadeiteAvailable())
